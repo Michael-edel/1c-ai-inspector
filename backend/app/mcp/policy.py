@@ -29,6 +29,12 @@ class PolicySnapshot:
             if tool.mode is ToolMode.READ_ONLY
         }
 
+    def contract_for_raw_name(self, name: str) -> ToolContract | None:
+        return next(
+            (tool for tool in self.normalized_tools.values() if tool.original_name == name),
+            None,
+        )
+
     @staticmethod
     def _calculate_toolset_checksum(tools: dict[str, ToolContract]) -> str:
         canonical = json.dumps(
@@ -73,7 +79,9 @@ class PolicyProvider:
             normalized_name = self._normalize_tool_name(original_name)
             if normalized_name in normalized_tools:
                 raise PolicyError(f"duplicate normalized tool name: {normalized_name}")
-            normalized_tools[normalized_name] = tool.model_copy(update={"name": normalized_name})
+            normalized_tools[normalized_name] = tool.model_copy(
+                update={"name": normalized_name, "original_name": original_name}
+            )
 
         return PolicySnapshot(policy, hashlib.sha256(canonical).hexdigest(), normalized_tools)
 

@@ -9,6 +9,7 @@ class ToolContract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
+    original_name: str | None = None
     category: str
     version: str = "1.0.0"
     mode: ToolMode
@@ -29,3 +30,13 @@ class PolicyFile(BaseModel):
     policy_id: str = Field(alias="policyId")
     version: str
     tools: dict[str, ToolContract] = Field(default_factory=dict)
+
+
+class McpToolDefinition(BaseModel):
+    name: str
+    description: str | None = None
+    input_schema: dict[str, Any] = Field(default_factory=dict, alias="inputSchema")
+
+
+class McpToolsList(BaseModel):
+    tools: list[McpToolDefinition] = Field(default_factory=list)

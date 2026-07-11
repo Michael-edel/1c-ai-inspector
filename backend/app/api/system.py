@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+import httpx
 
+from app.mcp.connector import McpConnector
+from app.mcp.policy import PolicyError
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -27,3 +30,16 @@ def readiness(request: Request) -> dict[str, object]:
     result["database"] = "not_checked"
     result["mcp"] = "not_checked"
     return result
+
+
+@router.get("/mcp/tools")
+async def discover_mcp_tools(request: Request) -> dict[str, object]:
+    connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
+    try:
+        tools = await connector.discover_tools()
+    except (httpx.HTTPError, PolicyError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="MCP server is unavailable") from exc
+    return {
+        "tools": [tool.model_dump(mode="json") for tool in tools],
+        "toolsetChecksum": request.app.state.policy_snapshot.toolset_checksum,
+    }

@@ -13,6 +13,7 @@ Read-only web-приложение для анализа кода 1С через
 - нормализацию toolset с отдельным checksum;
 - публикацию только `read-only` tools;
 - `/health`, `/api/v1/system/readiness` и `/api/v1/system/policy`.
+- `/api/v1/system/mcp/tools` для discovery разрешённых MCP tools.
 
 ## Запуск в PowerShell
 
@@ -43,5 +44,7 @@ python -m pytest -q
 ## Ограничения текущего среза
 
 Readiness Gate возвращает `not_ready`, пока tools не обнаружены и не нормализованы. Это блокирует запуск агентного контура до появления доступных read-only capabilities.
+
+MCP discovery получает `tools/list`, принимает только инструменты, перечисленные в policy, и отправляет на MCP Server исходное имя инструмента. Неизвестные инструменты отклоняются до сетевого запроса.
 
 Пока не реализованы полноценные синхронизация EDT-проектов, Code Assistant, Query Agent, Audit Agent, structured findings и вызов модели. MCP connector уже имеет серверную проверку policy, но транспорт и реальное обнаружение tools будут расширены следующим шагом.

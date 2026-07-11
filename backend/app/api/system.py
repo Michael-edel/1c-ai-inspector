@@ -9,6 +9,7 @@ from app.mcp.policy import PolicyError
 from app.db.session import get_db
 from app.services.mcp_discovery import McpDiscoveryService
 from app.services.capabilities import evaluate_capabilities
+from app.services.diagnostics import build_diagnostics
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -53,6 +54,14 @@ def capabilities(request: Request) -> dict[str, object]:
         "published": sorted(request.app.state.policy_snapshot.published_tools),
         "missingByAgent": report.as_dict()["agentCapabilities"],
     }
+
+
+@router.get("/diagnostics")
+def diagnostics(request: Request) -> dict[str, object]:
+    return build_diagnostics(
+        request.app.state.settings,
+        request.app.state.policy_snapshot,
+    )
 
 
 @router.get("/mcp/health")

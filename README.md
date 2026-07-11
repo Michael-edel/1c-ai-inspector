@@ -19,6 +19,7 @@ Read-only web-приложение для анализа кода 1С через
 - `/api/v1/system/mcp/tools` для discovery разрешённых MCP tools.
 - `/api/v1/system/mcp/health` для безопасной проверки MCP `initialize`.
 - `/api/v1/system/capabilities` для проверки покрытия capabilities всеми агентами.
+- `/api/v1/system/diagnostics` для проверки конфигурации MCP, policy и Model API без раскрытия секретов.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/tasks/{task_id}` для статуса, attempt и result readiness.
 - `GET /api/v1/agents` с тремя агентами v0.1.
@@ -92,3 +93,5 @@ npm run build
 Для полной проверки Compose требуется запущенный Docker Engine. На текущем окружении `docker compose config` проверен, но сборка контейнеров не выполнялась, потому что Docker Engine недоступен.
 
 Синхронизация проектов и retrieval-контекст реализованы через конфигурируемые read-only MCP tools. Реальный запуск всё ещё требует рабочего EDT MCP endpoint, заполненной policy и ключа модели. Docker-образы запускаются от non-root пользователей и используют lockfile frontend dependencies.
+
+Перед runtime запуском проверьте `Invoke-RestMethod http://localhost:8000/api/v1/system/diagnostics`. Endpoint показывает только факт настройки API key (`true/false`), но не его значение.

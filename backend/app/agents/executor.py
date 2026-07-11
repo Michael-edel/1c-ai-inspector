@@ -8,6 +8,7 @@ from app.models import Task
 from app.modeling import ModelAdapter, ModelError
 from app.reports.schema import StructuredReport
 from app.services.audit import AuditRecorder
+from app.services.context import ContextBuilder, ContextLimitError
 
 
 class AgentExecutionError(RuntimeError):
@@ -23,6 +24,14 @@ def execute_agent(
     settings: Settings,
     adapter: ModelAdapter,
 ) -> StructuredReport:
+    try:
+        request = json.loads(task.request_json)
+        context = ContextBuilder(settings).build(request)
+    except ContextLimitError as exc:
+        raise AgentExecutionError(str(exc)) from exc
+    except (ValueError, TypeError) as exc:
+        raise AgentExecutionError("TASK_REQUEST_INVALID") from exc
+
     messages = [
         {
             "role": "system",
@@ -33,8 +42,8 @@ def execute_agent(
         },
         {
             "role": "user",
-            "content": json.dumps(
-                {"taskId": task.id, "agent": definition.code, "request": json.loads(task.request_json)},
+            "content": f"{context}\n\nTask envelope:\n" + json.dumps(
+                {"taskId": task.id, "agent": definition.code, "request": request},
                 ensure_ascii=False,
             ),
         },

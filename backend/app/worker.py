@@ -15,6 +15,7 @@ from app.db.session import get_session_factory
 from app.modeling import OpenAICompatibleAdapter
 from app.models import Agent, Task, TaskEvent
 from app.services.audit import AuditRecorder
+from app.services.findings import persist_findings
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 task.status = report.status
                 task.heartbeat_at = datetime.now(timezone.utc)
                 task.result_json = report.model_dump_json(by_alias=True)
+                persist_findings(session, report)
                 AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent.code})
     except AgentExecutionError as exc:
         with session.begin():

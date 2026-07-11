@@ -22,6 +22,7 @@ Read-only web-приложение для анализа кода 1С через
 - `GET /api/v1/agents` с тремя агентами v0.1.
 - React/Vite web UI на `http://localhost:5173`.
 - `GET /api/v1/tasks/{task_id}/audit` для task events, tool calls и model usage.
+- `GET /api/v1/tasks/{task_id}/report` для structured report и сохранённых findings.
 
 ## Запуск в PowerShell
 
@@ -67,6 +68,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.
 
 Worker вызывает модель только после claim задачи. Ответ обязан соответствовать `StructuredReport`; findings без evidence отклоняются, а token usage и estimated cost пишутся в audit.
+Контекст задачи ограничивается `MAX_CONTEXT_CHARS` и передаётся модели как `<untrusted_context>`: содержимое проекта трактуется только как данные, а не как инструкции. Findings и evidence сохраняются в `findings` и `finding_status_events`.
 
 Финальная локальная проверка без Docker:
 

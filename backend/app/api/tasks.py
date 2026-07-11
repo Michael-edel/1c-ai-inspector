@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.enums import TaskStatus
 from app.db.session import get_db
 from app.agents.registry import AgentRegistry
-from app.models import Agent, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
+from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
@@ -150,3 +150,25 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
             for item in usage
         ],
     )
+
+
+@router.get("/{task_id}/report")
+def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    if not task.result_json:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report is not ready")
+    findings = db.scalars(select(Finding).where(Finding.task_id == task_id)).all()
+    report = json.loads(task.result_json)
+    report["persistedFindings"] = [
+        {
+            "id": item.id,
+            "severity": item.severity,
+            "category": item.category,
+            "objectFqn": item.object_fqn,
+            "evidence": json.loads(item.evidence_json),
+        }
+        for item in findings
+    ]
+    return report

@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      MIGRATION_DB_USER: ${MIGRATION_DB_USER}
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD}
+      RUNTIME_DB_USER: ${RUNTIME_DB_USER}
+      RUNTIME_DB_PASSWORD: ${RUNTIME_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
+      RUNTIME_DB_USER: ${RUNTIME_DB_USER}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
+      MCP_SERVER_URL: ${MCP_SERVER_URL}
+      MODEL_PROVIDER: ${MODEL_PROVIDER}
+      MODEL_NAME: ${MODEL_NAME}
+      MODEL_API_KEY: ${MODEL_API_KEY}
+      MCP_POLICY_PATH: /app/mcp_policy.yaml
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL}
+      MCP_SERVER_URL: ${MCP_SERVER_URL}
+      MODEL_PROVIDER: ${MODEL_PROVIDER}
+      MODEL_NAME: ${MODEL_NAME}
+      MODEL_API_KEY: ${MODEL_API_KEY}
+      MCP_POLICY_PATH: /app/mcp_policy.yaml
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT}
+      WORKER_POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL_SEC:-1}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "app.worker"]
+
+volumes:
+  postgres_data:

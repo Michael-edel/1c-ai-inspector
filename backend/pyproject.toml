@@ -1,0 +1,19 @@
+[project]
+name = "one-c-ai-inspector"
+version = "0.1.0"
+description = "Read-only 1C EDT AI Inspector foundation"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pyright]
+include = ["app"]
+exclude = ["**/__pycache__"]
+typeCheckingMode = "basic"
+pythonVersion = "3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"

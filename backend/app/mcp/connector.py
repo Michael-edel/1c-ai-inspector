@@ -25,6 +25,7 @@ class McpConnector:
         self._request_id = 0
         self._session_id: str | None = None
         self._initialized = False
+        self._protocol_version = "2025-06-18"
 
     async def initialize(self) -> dict[str, Any]:
         if self._initialized:
@@ -32,13 +33,17 @@ class McpConnector:
         result = await self._request(
             "initialize",
             {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": self._protocol_version,
                 "capabilities": {},
                 "clientInfo": {"name": "1c-ai-inspector", "version": "0.1.0"},
             },
         )
-        await self._notify("notifications/initialized", {})
         self._initialized = True
+        try:
+            await self._notify("notifications/initialized", {})
+        except Exception:
+            self._initialized = False
+            raise
         return result
 
     async def list_tools(self) -> dict[str, Any]:
@@ -82,6 +87,8 @@ class McpConnector:
         payload = {"jsonrpc": "2.0", "id": self._request_id, "method": method, "params": params}
         response = await self._post(payload)
         body = self._decode_response(response)
+        if body.get("id") != self._request_id:
+            raise RuntimeError("MCP response id does not match request")
         if "error" in body:
             raise RuntimeError(f"MCP request failed: {body['error']}")
         return body.get("result", {})
@@ -108,6 +115,8 @@ class McpConnector:
         headers = {"Accept": "application/json, text/event-stream"}
         if self._session_id:
             headers["Mcp-Session-Id"] = self._session_id
+        if self._initialized:
+            headers["MCP-Protocol-Version"] = self._protocol_version
         response = await self._client.post(self.endpoint_url, json=payload, headers=headers)
         response.raise_for_status()
         self._session_id = response.headers.get("Mcp-Session-Id", self._session_id)

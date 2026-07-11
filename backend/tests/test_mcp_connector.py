@@ -43,7 +43,7 @@ def test_discovery_uses_policy_and_call_sends_raw_name(tmp_path: Path) -> None:
         return httpx.Response(
             200,
             json={"jsonrpc": "2.0", "id": body["id"], "result": {"content": []}},
-        )
+            )
 
     connector = McpConnector(
         "http://mcp.test",
@@ -65,6 +65,41 @@ def test_discovery_uses_policy_and_call_sends_raw_name(tmp_path: Path) -> None:
     assert requests[0]["method"] == "initialize"
     assert requests[1]["method"] == "notifications/initialized"
     assert all(request["method"] != "tools/call" or request["id"] > 1 for request in requests)
+
+
+def test_protocol_header_is_sent_after_initialize(tmp_path: Path) -> None:
+    headers_seen: list[str | None] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        headers_seen.append(request.headers.get("MCP-Protocol-Version"))
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"tools": []}})
+
+    async def scenario() -> None:
+        connector = McpConnector(
+            "http://mcp.test", _policy(tmp_path), transport=httpx.MockTransport(handler)
+        )
+        await connector.list_tools()
+        await connector.close()
+
+    asyncio.run(scenario())
+    assert headers_seen[:2] == [None, "2025-06-18"]
+
+
+def test_mismatched_response_id_is_rejected(tmp_path: Path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body.get("id", 99) + 1, "result": {}})
+
+    connector = McpConnector(
+        "http://mcp.test", _policy(tmp_path), transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(RuntimeError, match="response id"):
+        asyncio.run(connector.initialize())
 
 
 def test_unknown_tool_is_rejected_before_http(tmp_path: Path) -> None:

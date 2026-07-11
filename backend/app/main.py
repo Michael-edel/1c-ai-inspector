@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.agents import router as agents_router
 from app.api.projects import router as projects_router
 from app.api.system import router as system_router
 from app.api.tasks import router as tasks_router
@@ -21,6 +22,7 @@ app = FastAPI(title="1C AI Inspector", version="0.1.0", lifespan=lifespan)
 app.include_router(system_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)
+app.include_router(agents_router)
 
 
 @app.get("/health")

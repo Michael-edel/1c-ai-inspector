@@ -28,3 +28,14 @@ def test_task_creation_is_blocked_until_toolset_is_ready() -> None:
         )
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "AGENT_TOOLSET_NOT_READY"
+
+
+def test_agents_endpoint_lists_v01_agents() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/agents")
+        assert response.status_code == 200
+        assert {item["code"] for item in response.json()} == {
+            "1c_code_assistant",
+            "1c_query_agent",
+            "1c_audit_agent",
+        }

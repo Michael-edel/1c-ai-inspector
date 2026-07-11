@@ -102,7 +102,13 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             async def run_retrieval():
                 connector = McpConnector(str(settings.mcp_server_url), snapshot)
                 try:
-                    return await retrieve_task_context(request, definition, snapshot, connector)
+                    return await retrieve_task_context(
+                        request,
+                        definition,
+                        snapshot,
+                        connector,
+                        settings.max_tool_calls,
+                    )
                 finally:
                     await connector.close()
 

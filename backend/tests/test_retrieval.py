@@ -57,3 +57,18 @@ def test_retrieval_rejects_missing_tool_before_http(tmp_path: Path) -> None:
                 connector,
             )
         )
+
+
+def test_retrieval_limit_is_enforced_before_http(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    connector = McpConnector("http://mcp.test", snapshot, transport=httpx.MockTransport(lambda _: pytest.fail("no http")))
+    with pytest.raises(ValueError, match="RETRIEVAL_LIMIT_EXCEEDED"):
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": {}}] * 2},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                connector,
+                max_tool_calls=1,
+            )
+        )

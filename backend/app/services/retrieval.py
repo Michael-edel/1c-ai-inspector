@@ -22,10 +22,13 @@ async def retrieve_task_context(
     definition: AgentDefinition,
     snapshot: PolicySnapshot,
     connector: McpConnector,
+    max_tool_calls: int = 30,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
         raise RetrievalError("RETRIEVAL_PLAN_INVALID")
+    if len(plan) > max_tool_calls:
+        raise RetrievalError("RETRIEVAL_LIMIT_EXCEEDED")
     allowed_categories = set(definition.required_capabilities)
     context: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []

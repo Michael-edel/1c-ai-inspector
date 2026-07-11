@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import json
 from typing import Protocol
 
 import httpx
@@ -47,11 +48,19 @@ class OpenAICompatibleAdapter:
 
         try:
             content = body["choices"][0]["message"]["content"]
+            if isinstance(content, list):
+                content = "".join(
+                    str(item.get("text", "")) for item in content if isinstance(item, dict)
+                )
+            content = str(content).strip()
+            if content.startswith("```"):
+                content = content.removeprefix("```").removeprefix("json").removesuffix("```").strip()
+            json.loads(content)
             usage = body.get("usage", {})
             return ModelResult(
-                content=str(content),
+                content=content,
                 input_tokens=int(usage.get("prompt_tokens", 0)),
                 output_tokens=int(usage.get("completion_tokens", 0)),
             )
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ModelError("MODEL_RESPONSE_INVALID") from exc

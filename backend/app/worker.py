@@ -20,6 +20,7 @@ from app.models import Agent, Task, TaskEvent
 from app.services.audit import AuditRecorder
 from app.services.findings import persist_findings
 from app.services.retrieval import RetrievalError, retrieve_task_context
+from app.services.task_state import validate_transition
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ def recover_stale_tasks(session, lease_timeout_sec: int) -> int:
             Task.heartbeat_at < cutoff_dt,
         )
         .values(
-            status=TaskStatus.CREATED.value,
+            status=TaskStatus.QUEUED.value,
             locked_by=None,
             locked_at=None,
             heartbeat_at=None,
@@ -51,7 +52,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
     recover_stale_tasks(session, lease_timeout_sec)
     statement = (
         select(Task)
-        .where(Task.status == TaskStatus.CREATED.value, Task.available_at <= now)
+        .where(Task.status == TaskStatus.QUEUED.value, Task.available_at <= now)
         .order_by(Task.created_at)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -59,6 +60,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
     task = session.execute(statement).scalar_one_or_none()
     if task is None:
         return None
+    validate_transition(task.status, TaskStatus.RUNNING.value)
     task.status = TaskStatus.RUNNING.value
     task.locked_by = socket.gethostname()
     task.locked_at = now
@@ -131,6 +133,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 OpenAICompatibleAdapter(settings),
                 retrieval.context,
             )
+            validate_transition(TaskStatus.RUNNING.value, report.status)
             task.status = report.status
             task.heartbeat_at = datetime.now(timezone.utc)
             task.result_json = report.model_dump_json(by_alias=True)

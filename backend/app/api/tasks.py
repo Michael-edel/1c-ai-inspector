@@ -41,6 +41,20 @@ class TaskAuditResponse(BaseModel):
     model_usage: list[dict[str, object]]
 
 
+@router.get("/{task_id}")
+def task_status(task_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return {
+        "taskId": task.id,
+        "status": task.status,
+        "attempt": task.attempt,
+        "resultReady": task.result_json is not None,
+        "lastErrorCode": task.last_error_code,
+    }
+
+
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 def create_task(
     payload: TaskCreateRequest,
@@ -83,7 +97,7 @@ def create_task(
         id=task_id,
         project_id=project.id,
         agent_id=agent.id,
-        status=TaskStatus.CREATED.value,
+        status=TaskStatus.QUEUED.value,
         request_json=json.dumps(payload.request, ensure_ascii=False),
         available_at=now,
     )

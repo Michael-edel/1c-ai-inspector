@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -73,9 +74,16 @@ class McpConnector:
         if contract.original_name is None:
             raise ToolNotAllowedError(f"MCP tool has no original name: {name}")
         await self.initialize()
-        return await self._request(
-            "tools/call", {"name": contract.original_name, "arguments": arguments}
-        )
+        for attempt in range(contract.retries + 1):
+            try:
+                return await self._request(
+                    "tools/call", {"name": contract.original_name, "arguments": arguments}
+                )
+            except (httpx.RequestError, httpx.HTTPStatusError):
+                if attempt >= contract.retries:
+                    raise
+                await asyncio.sleep(min(2**attempt, 5))
+        raise RuntimeError("MCP retry loop ended unexpectedly")
 
     async def close(self) -> None:
         if self._client is not None:

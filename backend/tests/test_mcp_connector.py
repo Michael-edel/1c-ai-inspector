@@ -102,6 +102,39 @@ def test_mismatched_response_id_is_rejected(tmp_path: Path) -> None:
         asyncio.run(connector.initialize())
 
 
+def test_read_only_tool_retries_transient_http_failure(tmp_path: Path) -> None:
+    path = tmp_path / "retry-policy.yaml"
+    path.write_text(
+        "policyId: test\nversion: 1.0.0\ntools:\n"
+        "  Read Module.Source: {name: raw, category: bsl.read, mode: read-only, retries: 1}\n",
+        encoding="utf-8",
+    )
+    policy = PolicyProvider(path).load()
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"content": []}})
+
+    async def scenario() -> dict[str, object]:
+        connector = McpConnector("http://mcp.test", policy, transport=httpx.MockTransport(handler))
+        try:
+            return await connector.call_tool("read_module_source", {})
+        finally:
+            await connector.close()
+
+    assert asyncio.run(scenario()) == {"content": []}
+    assert calls == 2
+
+
 def test_unknown_tool_is_rejected_before_http(tmp_path: Path) -> None:
     transport = httpx.MockTransport(lambda request: pytest.fail("HTTP must not be called"))
     connector = McpConnector("http://mcp.test", _policy(tmp_path), transport=transport)

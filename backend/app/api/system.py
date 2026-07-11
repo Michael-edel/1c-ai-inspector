@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Request
 
+from app.services.readiness import ReadinessGate
+
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
 
@@ -11,19 +13,17 @@ def policy_status(request: Request) -> dict[str, object]:
         "version": snapshot.policy.version,
         "checksum": snapshot.checksum,
         "publishedTools": sorted(snapshot.published_tools),
-        "capabilitiesStatus": "ready",
+        "normalizedTools": sorted(snapshot.normalized_tools),
+        "toolsetChecksum": snapshot.toolset_checksum,
+        "capabilitiesStatus": "ready" if snapshot.normalized_tools else "not_discovered",
     }
 
 
 @router.get("/readiness")
 def readiness(request: Request) -> dict[str, object]:
-    snapshot = request.app.state.policy_snapshot
-    return {
-        "status": "ready",
-        "policyLoaded": True,
-        "normalizedToolsetBuilt": True,
-        "onlyReadOnlyToolsPublished": len(snapshot.published_tools) == len(snapshot.policy.tools),
-        "policyChecksum": snapshot.checksum,
-        "database": "not_checked",
-        "mcp": "not_checked",
-    }
+    report = ReadinessGate().evaluate(request.app.state.policy_snapshot)
+    result = report.as_dict()
+    result["policyChecksum"] = request.app.state.policy_snapshot.checksum
+    result["database"] = "not_checked"
+    result["mcp"] = "not_checked"
+    return result

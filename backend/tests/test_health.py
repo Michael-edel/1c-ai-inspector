@@ -15,4 +15,6 @@ def test_policy_readiness() -> None:
         response = client.get("/api/v1/system/readiness")
         assert response.status_code == 200
         assert response.json()["onlyReadOnlyToolsPublished"] is True
-        assert response.json()["status"] == "ready"
+        assert response.json()["status"] == "not_ready"
+        assert response.json()["capabilitiesStatus"] == "not_discovered"
+        assert "no_tools_discovered" in response.json()["reasons"]

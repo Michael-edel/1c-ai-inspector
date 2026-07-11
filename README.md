@@ -17,6 +17,7 @@ Read-only web-приложение для анализа кода 1С через
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/agents` с тремя агентами v0.1.
 - React/Vite web UI на `http://localhost:5173`.
+- `GET /api/v1/tasks/{task_id}/audit` для task events, tool calls и model usage.
 
 ## Запуск в PowerShell
 
@@ -57,5 +58,7 @@ MCP discovery получает `tools/list`, принимает только и�
 Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
 
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
+
+Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.
 
 Пока не реализованы полноценные синхронизация EDT-проектов, Code Assistant, Query Agent, Audit Agent, structured findings и вызов модели. MCP connector уже имеет серверную проверку policy, но транспорт и реальное обнаружение tools будут расширены следующим шагом.

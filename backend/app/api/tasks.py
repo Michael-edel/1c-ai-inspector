@@ -4,12 +4,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.enums import TaskStatus
 from app.db.session import get_db
-from app.models import Agent, Project, PromptExecutionSnapshot, Task, TaskEvent
+from app.models import Agent, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
@@ -28,6 +29,14 @@ class TaskResponse(BaseModel):
     status: str
     policy_version: str
     toolset_checksum: str
+
+
+class TaskAuditResponse(BaseModel):
+    task_id: str
+    status: str
+    events: list[dict[str, object]]
+    tool_calls: list[dict[str, object]]
+    model_usage: list[dict[str, object]]
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -89,4 +98,40 @@ def create_task(
         status=task.status,
         policy_version=snapshot.policy.version,
         toolset_checksum=snapshot.toolset_checksum,
+    )
+
+
+@router.get("/{task_id}/audit", response_model=TaskAuditResponse)
+def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    events = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task_id).order_by(TaskEvent.created_at)).all()
+    calls = db.scalars(select(ToolCall).where(ToolCall.task_id == task_id).order_by(ToolCall.created_at)).all()
+    usage = db.scalars(select(ModelUsage).where(ModelUsage.task_id == task_id).order_by(ModelUsage.created_at)).all()
+    return TaskAuditResponse(
+        task_id=task.id,
+        status=task.status,
+        events=[{"type": event.event_type, "payload": json.loads(event.payload_json)} for event in events],
+        tool_calls=[
+            {
+                "id": call.id,
+                "toolName": call.tool_name,
+                "mode": call.mode,
+                "status": call.status,
+                "durationMs": call.duration_ms,
+                "errorCode": call.error_code,
+            }
+            for call in calls
+        ],
+        model_usage=[
+            {
+                "provider": item.provider,
+                "model": item.model,
+                "inputTokens": item.input_tokens,
+                "outputTokens": item.output_tokens,
+                "estimatedCost": item.estimated_cost,
+            }
+            for item in usage
+        ],
     )

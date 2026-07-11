@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     model_provider: str = "openai"
     model_name: str = "gpt-5.5"
     model_api_key: str = Field(min_length=1)
+    model_input_cost_per_1k: float = Field(default=0, ge=0)
+    model_output_cost_per_1k: float = Field(default=0, ge=0)
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)
     task_timeout_sec: int = Field(default=300, ge=1, le=86_400)

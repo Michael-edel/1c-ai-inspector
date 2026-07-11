@@ -50,7 +50,7 @@ Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 ```
 
 Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.scriptsacceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test. Offline acceptance-тест отдельно проходит mock MCP -> project sync -> retrieval -> report контур и не заменяет live EDT/MODEL E2E.
-Live acceptance после настройки `.env` запускается командой `.scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery и project sync.
+Live acceptance после настройки `.env` запускается командой `.scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery и project sync, а при placeholder-конфигурации перечисляет все отсутствующие ключи.
 
 Тесты без Docker:
 

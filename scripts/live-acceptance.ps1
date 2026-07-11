@@ -15,10 +15,14 @@ Get-Content -LiteralPath $envPath | ForEach-Object {
     }
 }
 
+ $missing = @()
 foreach ($key in @("MCP_SERVER_URL", "MODEL_API_URL", "MODEL_API_KEY")) {
     if (-not $values[$key] -or $values[$key] -like "replace-with-*") {
-        throw "$key is not configured in .env"
+        $missing += $key
     }
+}
+if ($missing.Count -gt 0) {
+    throw "Not configured in .env: $($missing -join ', ')"
 }
 
 docker info | Out-Null

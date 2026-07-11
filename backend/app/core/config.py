@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     model_provider: str = "openai"
     model_name: str = "gpt-5.5"
     model_api_key: str = Field(min_length=1)
+    model_api_url: AnyHttpUrl = "https://api.openai.com/v1"
     model_input_cost_per_1k: float = Field(default=0, ge=0)
     model_output_cost_per_1k: float = Field(default=0, ge=0)
     max_tool_calls: int = Field(default=30, ge=1, le=500)

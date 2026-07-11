@@ -7,9 +7,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 
+from app.agents.executor import AgentExecutionError, execute_agent
+from app.agents.registry import AgentRegistry
+from app.core.config import get_settings
 from app.core.enums import TaskStatus
 from app.db.session import get_session_factory
-from app.models import Task, TaskEvent
+from app.modeling import OpenAICompatibleAdapter
+from app.models import Agent, Task, TaskEvent
+from app.services.audit import AuditRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -73,20 +78,32 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                     payload_json=json.dumps({"attempt": task.attempt}),
                 )
             )
-        # Agent execution is intentionally not enabled in this foundation slice.
         with session.begin():
             task = session.get(Task, task_id)
             if task is not None:
-                task.status = TaskStatus.COMPLETED.value
-                task.heartbeat_at = datetime.now(timezone.utc)
-                task.result_json = json.dumps({"status": "technical_task_completed"})
-                session.add(
-                    TaskEvent(
-                        task_id=task_id,
-                        event_type="task_completed",
-                        payload_json='{"mode":"foundation"}',
-                    )
+                agent = session.get(Agent, task.agent_id)
+                if agent is None:
+                    raise AgentExecutionError("AGENT_NOT_FOUND")
+                settings = get_settings()
+                report = execute_agent(
+                    session,
+                    task,
+                    AgentRegistry().get(agent.code),
+                    settings,
+                    OpenAICompatibleAdapter(settings),
                 )
+                task.status = report.status
+                task.heartbeat_at = datetime.now(timezone.utc)
+                task.result_json = report.model_dump_json(by_alias=True)
+                AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent.code})
+    except AgentExecutionError as exc:
+        with session.begin():
+            task = session.get(Task, task_id)
+            if task is not None:
+                task.status = TaskStatus.FAILED.value
+                task.last_error_code = exc.code
+                task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
+                AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
         return True
     except Exception:
         session.rollback()

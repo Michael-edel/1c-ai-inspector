@@ -8,6 +8,7 @@ Read-only web-приложение для анализа кода 1С через
 - PostgreSQL с отдельными migration/runtime ролями;
 - Alembic и одноразовый Compose-сервис `migrate`;
 - отдельный PostgreSQL worker;
+- OpenAI-compatible model adapter для трёх профилей агентов и structured report validation;
 - worker claim через `FOR UPDATE SKIP LOCKED` с lease/heartbeat и возвратом зависших задач;
 - атомарный claim через `SELECT ... FOR UPDATE SKIP LOCKED`;
 - MCP policy с checksum;
@@ -65,6 +66,8 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.
 
+Worker вызывает модель только после claim задачи. Ответ обязан соответствовать `StructuredReport`; findings без evidence отклоняются, а token usage и estimated cost пишутся в audit.
+
 Финальная локальная проверка без Docker:
 
 ```powershell
@@ -77,4 +80,4 @@ npm run build
 
 Для полной проверки Compose требуется запущенный Docker Engine. На текущем окружении `docker compose config` проверен, но сборка контейнеров не выполнялась, потому что Docker Engine недоступен.
 
-Пока не реализованы полноценные синхронизация EDT-проектов, Code Assistant, Query Agent, Audit Agent, structured findings и вызов модели. MCP connector уже имеет серверную проверку policy, но транспорт и реальное обнаружение tools будут расширены следующим шагом.
+Пока не реализована полноценная синхронизация EDT-проектов и retrieval-контекст из MCP. Транспорт модели подключён через `MODEL_API_URL`, но реальный запуск требует рабочего read-only MCP endpoint, заполненной policy и ключа модели.

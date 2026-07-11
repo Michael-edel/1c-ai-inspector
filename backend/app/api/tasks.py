@@ -4,12 +4,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.core.enums import TaskStatus
 from app.db.session import get_db
+from app.agents.registry import AgentRegistry
 from app.models import Agent, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 
@@ -56,9 +57,23 @@ def create_task(
     project = db.get(Project, payload.project_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    agent = db.get(Agent, payload.agent_id)
+    agent = db.scalar(
+        select(Agent).where(or_(Agent.id == payload.agent_id, Agent.code == payload.agent_id))
+    )
     if agent is None or not agent.enabled:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+        try:
+            definition = AgentRegistry().get(payload.agent_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found") from exc
+        agent = Agent(
+            id=f"agt_{uuid4().hex}",
+            code=definition.code,
+            name=definition.name,
+            prompt_version=definition.prompt_version,
+            enabled=True,
+        )
+        db.add(agent)
+        db.flush()
 
     settings: Settings = request.app.state.settings
     now = datetime.now(timezone.utc)

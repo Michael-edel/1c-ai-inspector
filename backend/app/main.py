@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.settings = settings
     app.state.policy_snapshot = PolicyProvider(settings.mcp_policy_path).load()
+    app.state.discovered_tools = {}
     yield
 
 

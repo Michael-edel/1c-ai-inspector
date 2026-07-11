@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.mcp.connector import McpConnector
 from app.mcp.policy import PolicyError
 from app.db.session import get_db
+from app.services.mcp_discovery import McpDiscoveryService
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -23,12 +24,16 @@ def policy_status(request: Request) -> dict[str, object]:
         "normalizedTools": sorted(snapshot.normalized_tools),
         "toolsetChecksum": snapshot.toolset_checksum,
         "capabilitiesStatus": "ready" if snapshot.normalized_tools else "not_discovered",
+        "discoveredTools": sorted(request.app.state.discovered_tools),
     }
 
 
 @router.get("/readiness")
 def readiness(request: Request) -> dict[str, object]:
-    report = ReadinessGate().evaluate(request.app.state.policy_snapshot)
+    report = ReadinessGate().evaluate(
+        request.app.state.policy_snapshot,
+        set(request.app.state.discovered_tools),
+    )
     result = report.as_dict()
     result["policyChecksum"] = request.app.state.policy_snapshot.checksum
     result["database"] = "not_checked"
@@ -36,13 +41,32 @@ def readiness(request: Request) -> dict[str, object]:
     return result
 
 
+@router.get("/mcp/health")
+async def mcp_health(request: Request) -> dict[str, object]:
+    connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
+    try:
+        result = await connector.initialize()
+    except (httpx.HTTPError, PolicyError, ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="MCP server is unavailable") from exc
+    return {"status": "ok", "server": result.get("serverInfo", {})}
+
+
 @router.get("/mcp/tools")
-async def discover_mcp_tools(request: Request) -> dict[str, object]:
+async def discover_mcp_tools(
+    request: Request, db: Session = Depends(get_db)
+) -> dict[str, object]:
     connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
     try:
         tools = await connector.discover_tools()
-    except (httpx.HTTPError, PolicyError, ValueError) as exc:
-        raise HTTPException(status_code=503, detail="MCP server is unavailable") from exc
+        McpDiscoveryService(
+            db,
+            request.app.state.policy_snapshot,
+            str(request.app.state.settings.mcp_server_url),
+        ).persist(tools)
+    except (httpx.HTTPError, PolicyError, ValueError, RuntimeError, SQLAlchemyError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="MCP discovery is unavailable") from exc
+    request.app.state.discovered_tools = {tool.name: tool for tool in tools}
     return {
         "tools": [tool.model_dump(mode="json") for tool in tools],
         "toolsetChecksum": request.app.state.policy_snapshot.toolset_checksum,
@@ -51,7 +75,10 @@ async def discover_mcp_tools(request: Request) -> dict[str, object]:
 
 @router.get("/ready")
 def ready(request: Request, db: Session = Depends(get_db)) -> dict[str, object]:
-    report = ReadinessGate().evaluate(request.app.state.policy_snapshot)
+    report = ReadinessGate().evaluate(
+        request.app.state.policy_snapshot,
+        set(request.app.state.discovered_tools),
+    )
     if report.status != "ready":
         raise HTTPException(
             status_code=503,

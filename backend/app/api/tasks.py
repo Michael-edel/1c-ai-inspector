@@ -46,7 +46,7 @@ def create_task(
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     snapshot = request.app.state.policy_snapshot
-    readiness = ReadinessGate().evaluate(snapshot)
+    readiness = ReadinessGate().evaluate(snapshot, set(request.app.state.discovered_tools))
     if readiness.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

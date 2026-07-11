@@ -26,7 +26,9 @@ class ReadinessReport:
 
 
 class ReadinessGate:
-    def evaluate(self, snapshot: PolicySnapshot) -> ReadinessReport:
+    def evaluate(
+        self, snapshot: PolicySnapshot, discovered_tools: set[str] | None = None
+    ) -> ReadinessReport:
         reasons: list[str] = []
         only_read_only = len(snapshot.published_tools) == len(snapshot.normalized_tools)
         if not only_read_only:
@@ -34,8 +36,12 @@ class ReadinessGate:
 
         if not snapshot.normalized_tools:
             reasons.append("no_tools_discovered")
+        elif discovered_tools is not None and not discovered_tools:
+            reasons.append("mcp_tools_not_discovered")
+        elif discovered_tools is not None and set(snapshot.published_tools) - discovered_tools:
+            reasons.append("policy_tools_missing_on_mcp")
 
-        capabilities_status = "ready" if snapshot.normalized_tools else "not_discovered"
+        capabilities_status = "ready" if snapshot.normalized_tools and not reasons else "not_discovered"
         status = "ready" if not reasons else "not_ready"
         return ReadinessReport(
             status=status,

@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
 .ghost-button.compact { padding: 7px 9px; font-size: 10px; }
+.heading-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: end; }
 .ghost-button:disabled { opacity: .5; cursor: not-allowed; }
 .empty-note { color: #7f91a9; font-size: 12px; }
 :root { color: #e9eff8; background: #0b111d; font-family: "Manrope", sans-serif; font-synthesis: none; }

@@ -6,6 +6,8 @@ type Readiness = { status: string; capabilitiesStatus: string; policyChecksum: s
 type Policy = { policyId: string; version: string; publishedTools: string[]; normalizedTools: string[]; discoveredTools: string[]; toolsetChecksum: string };
 type Agent = { code: string; name: string; prompt_version: string; task_kind: string };
 type Audit = { task_id: string; status: string; events: { type: string }[]; model_usage: { model: string; estimatedCost: number }[] };
+type Project = { id: string; name: string; environment: string; availableCapabilities: string[] };
+type Report = { status: string; summary: string; findings: unknown[]; persistedFindings: unknown[] };
 
 const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(path, options);
@@ -24,6 +26,9 @@ function App() {
   const [taskId, setTaskId] = useState("");
   const [audit, setAudit] = useState<Audit | null>(null);
   const [discovering, setDiscovering] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [report, setReport] = useState<Report | null>(null);
 
   const refresh = async () => {
     try {
@@ -36,8 +41,26 @@ function App() {
       setReadiness(nextReadiness);
       setPolicy(nextPolicy);
       setAgents(nextAgents);
+      try {
+        const nextProjects = await api<Project[]>("/api/v1/projects");
+        setProjects(nextProjects);
+        setSelectedProject((current) => current || nextProjects[0]?.id || "");
+      } catch {
+        setProjects([]);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось загрузить состояние");
+    }
+  };
+
+  const syncProjects = async () => {
+    setError("");
+    try {
+      const result = await api<{ synced: number }>("/api/v1/projects/sync", { method: "POST" });
+      setMessage(`Синхронизировано проектов: ${result.synced}`);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Синхронизация проектов недоступна");
     }
   };
 
@@ -60,18 +83,19 @@ function App() {
 
   const createTask = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canCreateTask || !taskText.trim()) return;
+    if (!canCreateTask || !taskText.trim() || !selectedProject) return;
     setMessage("");
     setError("");
     try {
       const created = await api<{ task_id: string }>("/api/v1/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: "default", agentId: selectedAgent, request: { text: taskText.trim() } }),
+        body: JSON.stringify({ projectId: selectedProject, agentId: selectedAgent, request: { text: taskText.trim() } }),
       });
       setTaskId(created.task_id);
       setAudit(null);
       setTaskText("");
+      setReport(null);
       setMessage("Задача создана и отправлена в очередь.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось создать задачу");
@@ -87,6 +111,15 @@ function App() {
     }
   };
 
+  const loadReport = async () => {
+    if (!taskId) return;
+    try {
+      setReport(await api<Report>(`/api/v1/tasks/${taskId}/report`));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Report ещё не готов");
+    }
+  };
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">1C</span><span>AI Inspector</span></div>
@@ -99,9 +132,9 @@ function App() {
       <section className="hero-grid" id="overview"><div className="hero-copy"><span className="status-kicker">READ-ONLY MVP</span><h2>Проверяем контур до запуска агента.</h2><p>Каждый вызов проходит через policy, нормализованный toolset и execution snapshot. Запись в проект не разрешена.</p></div><div className={`readiness-card ${readiness?.status === "ready" ? "ready" : "blocked"}`}><div className="card-label">READINESS GATE</div><div className="readiness-status">{readiness?.status === "ready" ? "READY" : "NOT READY"}</div><p>{readiness?.reasons?.[0] === "no_tools_discovered" ? "MCP tools ещё не обнаружены" : "Проверка выполняется"}</p><div className="progress-line"><span /></div></div></section>
       {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
       <section className="metrics-row"><div className="metric"><span>Policy</span><strong>{policy?.version ?? "—"}</strong><small>{policy?.policyId ?? "loading"}</small></div><div className="metric"><span>Capabilities</span><strong>{policy?.normalizedTools.length ?? 0}</strong><small>{readiness?.capabilitiesStatus ?? "—"}</small></div><div className="metric"><span>Discovered</span><strong>{policy?.discoveredTools.length ?? 0}</strong><small>from MCP server</small></div></section>
-      <section className="work-grid"><div className="panel task-panel"><div className="panel-heading"><div><span className="panel-index">01</span><h3>Поставить задачу</h3></div><span className="lock">{canCreateTask ? "OPEN" : "LOCKED"}</span></div><form onSubmit={createTask}><label htmlFor="agent">Agent profile</label><select id="agent" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} disabled={!canCreateTask}>{agents.map((agent) => <option key={agent.code} value={agent.code}>{agent.name}</option>)}</select><label htmlFor="task">Запрос по коду 1С</label><textarea id="task" value={taskText} onChange={(event) => setTaskText(event.target.value)} placeholder="Например: проверь запросы в модуле документа ЗаказКлиента" disabled={!canCreateTask} /><button className="primary-button" disabled={!canCreateTask || !taskText.trim()}>{canCreateTask ? "Создать read-only задачу" : "Ожидание MCP tools"}</button></form></div><div className="panel" id="policy"><div className="panel-heading"><div><span className="panel-index">02</span><h3>Policy snapshot</h3></div><button className="ghost-button compact" onClick={() => void discoverTools()} disabled={discovering}>{discovering ? "DISCOVERING" : "DISCOVER MCP"}</button></div><dl className="data-list"><div><dt>Policy checksum</dt><dd>{readiness?.policyChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Toolset checksum</dt><dd>{policy?.toolsetChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Published tools</dt><dd className="safe">{policy?.publishedTools.length ?? 0} read-only</dd></div><div><dt>Environment</dt><dd>sandbox</dd></div></dl></div></section>
+      <section className="work-grid"><div className="panel task-panel"><div className="panel-heading"><div><span className="panel-index">01</span><h3>Поставить задачу</h3></div><span className="lock">{canCreateTask ? "OPEN" : "LOCKED"}</span></div><form onSubmit={createTask}><label htmlFor="project">EDT project</label><select id="project" value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)} disabled={!canCreateTask || projects.length === 0}><option value="">Выберите проект</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.environment}</option>)}</select><label htmlFor="agent">Agent profile</label><select id="agent" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} disabled={!canCreateTask}>{agents.map((agent) => <option key={agent.code} value={agent.code}>{agent.name}</option>)}</select><label htmlFor="task">Запрос по коду 1С</label><textarea id="task" value={taskText} onChange={(event) => setTaskText(event.target.value)} placeholder="Например: проверь запросы в модуле документа ЗаказКлиента" disabled={!canCreateTask} /><button className="primary-button" disabled={!canCreateTask || !selectedProject || !taskText.trim()}>{canCreateTask ? "Создать read-only задачу" : "Ожидание MCP tools"}</button></form></div><div className="panel" id="policy"><div className="panel-heading"><div><span className="panel-index">02</span><h3>Policy snapshot</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void syncProjects()}>SYNC PROJECTS</button><button className="ghost-button compact" onClick={() => void discoverTools()} disabled={discovering}>{discovering ? "DISCOVERING" : "DISCOVER MCP"}</button></div></div><dl className="data-list"><div><dt>Projects</dt><dd>{projects.length}</dd></div><div><dt>Policy checksum</dt><dd>{readiness?.policyChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Toolset checksum</dt><dd>{policy?.toolsetChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Published tools</dt><dd className="safe">{policy?.publishedTools.length ?? 0} read-only</dd></div></dl></div></section>
       <section className="panel agents-panel" id="agents"><div className="panel-heading"><div><span className="panel-index">03</span><h3>Agent registry</h3></div><span className="panel-note">v0.1 / 3 profiles</span></div><div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={agent.code}><span className="agent-number">0{index + 1}</span><div><strong>{agent.name}</strong><small>{agent.task_kind} · prompt {agent.prompt_version}</small></div><span className="agent-state">STAGED</span></div>)}</div></section>
-      <section className="panel agents-panel"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Execution audit</h3></div><button className="ghost-button compact" onClick={() => void loadAudit()} disabled={!taskId}>REFRESH AUDIT</button></div>{taskId ? <dl className="data-list"><div><dt>Task</dt><dd>{taskId.slice(0, 18)}…</dd></div><div><dt>Status</dt><dd>{audit?.status ?? "queued"}</dd></div><div><dt>Events</dt><dd>{audit?.events.length ?? 0}</dd></div><div><dt>Model cost</dt><dd>{audit?.model_usage.reduce((sum, item) => sum + item.estimatedCost, 0).toFixed(4) ?? "0.0000"}</dd></div></dl> : <p className="empty-note">Создайте задачу после прохождения readiness gate.</p>}</section>
+      <section className="panel agents-panel"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Execution audit</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void loadAudit()} disabled={!taskId}>REFRESH AUDIT</button><button className="ghost-button compact" onClick={() => void loadReport()} disabled={!taskId}>LOAD REPORT</button></div></div>{taskId ? <dl className="data-list"><div><dt>Task</dt><dd>{taskId.slice(0, 18)}…</dd></div><div><dt>Status</dt><dd>{audit?.status ?? "queued"}</dd></div><div><dt>Events</dt><dd>{audit?.events.length ?? 0}</dd></div><div><dt>Model cost</dt><dd>{audit?.model_usage.reduce((sum, item) => sum + item.estimatedCost, 0).toFixed(4) ?? "0.0000"}</dd></div>{report && <><div><dt>Summary</dt><dd>{report.summary}</dd></div><div><dt>Findings</dt><dd>{report.persistedFindings.length}</dd></div></>}</dl> : <p className="empty-note">Создайте задачу после прохождения readiness gate.</p>}</section>
     </main>
   </div>;
 }

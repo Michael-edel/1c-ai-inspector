@@ -35,7 +35,7 @@ notepad .env
 docker compose --env-file .env up --build
 ```
 
-После запуска откройте `http://localhost:5173`. Панель показывает readiness, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit созданной task.
+После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 
 Frontend dependencies не коммитятся; `frontend/package-lock.json` фиксирует версии для повторяемой установки.
 

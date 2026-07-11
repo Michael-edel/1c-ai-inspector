@@ -75,6 +75,7 @@ services:
       MCP_POLICY_PATH: /app/mcp_policy.yaml
       APP_ENVIRONMENT: ${APP_ENVIRONMENT}
       WORKER_POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL_SEC:-1}
+      WORKER_LEASE_TIMEOUT_SEC: ${WORKER_LEASE_TIMEOUT_SEC:-600}
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)
     task_timeout_sec: int = Field(default=300, ge=1, le=86_400)
+    worker_lease_timeout_sec: int = Field(default=600, ge=5, le=86_400)
     mcp_policy_path: Path = Path("/app/mcp_policy.yaml")
     prompts_path: Path = Path("/app/prompts")
     app_environment: str = "sandbox"

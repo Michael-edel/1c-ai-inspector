@@ -71,6 +71,8 @@ async def mcp_health(request: Request) -> dict[str, object]:
         result = await connector.initialize()
     except (httpx.HTTPError, PolicyError, ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail="MCP server is unavailable") from exc
+    finally:
+        await connector.close()
     return {"status": "ok", "server": result.get("serverInfo", {})}
 
 
@@ -89,6 +91,8 @@ async def discover_mcp_tools(
     except (httpx.HTTPError, PolicyError, ValueError, RuntimeError, SQLAlchemyError) as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="MCP discovery is unavailable") from exc
+    finally:
+        await connector.close()
     request.app.state.discovered_tools = {tool.name: tool for tool in tools}
     return {
         "tools": [tool.model_dump(mode="json") for tool in tools],

@@ -20,11 +20,28 @@ class McpConnector:
         self.endpoint_url = endpoint_url.rstrip("/")
         self.policy = policy
         self.transport = transport
+        self._client: httpx.AsyncClient | None = None
+        self._request_id = 0
+        self._session_id: str | None = None
+        self._initialized = False
 
     async def initialize(self) -> dict[str, Any]:
-        return await self._request("initialize", {"protocolVersion": "2025-06-18"})
+        if self._initialized:
+            return {}
+        result = await self._request(
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "1c-ai-inspector", "version": "0.1.0"},
+            },
+        )
+        await self._notify("notifications/initialized", {})
+        self._initialized = True
+        return result
 
     async def list_tools(self) -> dict[str, Any]:
+        await self.initialize()
         return await self._request("tools/list", {})
 
     async def discover_tools(self) -> list[ToolContract]:
@@ -49,19 +66,35 @@ class McpConnector:
             raise ToolNotAllowedError(f"MCP tool is not published: {name}")
         if contract.original_name is None:
             raise ToolNotAllowedError(f"MCP tool has no original name: {name}")
+        await self.initialize()
         return await self._request(
             "tools/call", {"name": contract.original_name, "arguments": arguments}
         )
 
     async def close(self) -> None:
-        return None
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-        async with httpx.AsyncClient(timeout=30, transport=self.transport) as client:
-            response = await client.post(self.endpoint_url, json=payload)
-            response.raise_for_status()
-            body = response.json()
+        self._request_id += 1
+        payload = {"jsonrpc": "2.0", "id": self._request_id, "method": method, "params": params}
+        response = await self._post(payload)
+        body = response.json()
         if "error" in body:
             raise RuntimeError(f"MCP request failed: {body['error']}")
         return body.get("result", {})
+
+    async def _notify(self, method: str, params: dict[str, Any]) -> None:
+        await self._post({"jsonrpc": "2.0", "method": method, "params": params})
+
+    async def _post(self, payload: dict[str, Any]) -> httpx.Response:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=30, transport=self.transport)
+        headers = {"Accept": "application/json, text/event-stream"}
+        if self._session_id:
+            headers["Mcp-Session-Id"] = self._session_id
+        response = await self._client.post(self.endpoint_url, json=payload, headers=headers)
+        response.raise_for_status()
+        self._session_id = response.headers.get("Mcp-Session-Id", self._session_id)
+        return response

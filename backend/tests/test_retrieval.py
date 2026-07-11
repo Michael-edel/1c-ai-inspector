@@ -26,6 +26,10 @@ def test_retrieval_calls_only_published_capability(tmp_path: Path) -> None:
 
     async def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, headers={"Mcp-Session-Id": "session-1"}, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
         assert body["method"] == "tools/call"
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"content": []}})
 

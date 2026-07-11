@@ -44,4 +44,6 @@ async def sync_project_list(request: Request, db: Session = Depends(get_db)) -> 
     except (httpx.HTTPError, RuntimeError, ToolNotAllowedError, ProjectSyncError) as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Project sync is unavailable") from exc
+    finally:
+        await connector.close()
     return {"synced": count}

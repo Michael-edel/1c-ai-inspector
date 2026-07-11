@@ -99,14 +99,14 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         snapshot = PolicyProvider(settings.mcp_policy_path).load()
         try:
             request = json.loads(request_json)
-            retrieval = asyncio.run(
-                retrieve_task_context(
-                    request,
-                    definition,
-                    snapshot,
-                    McpConnector(str(settings.mcp_server_url), snapshot),
-                )
-            )
+            async def run_retrieval():
+                connector = McpConnector(str(settings.mcp_server_url), snapshot)
+                try:
+                    return await retrieve_task_context(request, definition, snapshot, connector)
+                finally:
+                    await connector.close()
+
+            retrieval = asyncio.run(run_retrieval())
         except (RetrievalError, ToolNotAllowedError, ValueError) as exc:
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():

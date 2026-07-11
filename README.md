@@ -16,6 +16,7 @@ Read-only web-приложение для анализа кода 1С через
 - `/api/v1/system/mcp/tools` для discovery разрешённых MCP tools.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/agents` с тремя агентами v0.1.
+- React/Vite web UI на `http://localhost:5173`.
 
 ## Запуск в PowerShell
 
@@ -24,6 +25,8 @@ Copy-Item .env.example .env
 notepad .env
 docker compose --env-file .env up --build
 ```
+
+После запуска откройте `http://localhost:5173`. Панель показывает readiness, policy/toolset checksums, registry агентов и блокирует создание task, пока MCP tools не готовы.
 
 Проверка:
 

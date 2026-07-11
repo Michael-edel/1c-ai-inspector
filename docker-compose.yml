@@ -76,5 +76,16 @@ services:
         condition: service_completed_successfully
     command: ["python", "-m", "app.worker"]
 
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   postgres_data:

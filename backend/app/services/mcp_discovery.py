@@ -2,6 +2,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.mcp.contracts import ToolContract
@@ -16,6 +17,12 @@ class McpDiscoveryService:
         self.endpoint_url = endpoint_url
 
     def persist(self, tools: list[ToolContract]) -> None:
+        discovered_names = {tool.name for tool in tools}
+        for existing in self.db.scalars(select(NormalizedTool)).all():
+            if existing.normalized_name not in discovered_names:
+                existing.publication_status = "retired"
+                existing.updated_at = datetime.now(timezone.utc)
+
         server = self.db.get(McpServer, "mcp_edt")
         if server is None:
             server = McpServer(

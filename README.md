@@ -18,6 +18,7 @@ Read-only web-приложение для анализа кода 1С через
 - `/api/v1/system/ready` с проверкой toolset и PostgreSQL.
 - `/api/v1/system/mcp/tools` для discovery разрешённых MCP tools.
 - `/api/v1/system/mcp/health` для безопасной проверки MCP `initialize`.
+- `/api/v1/system/capabilities` для проверки покрытия capabilities всеми агентами.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/agents` с тремя агентами v0.1.
 - React/Vite web UI на `http://localhost:5173`.
@@ -61,7 +62,7 @@ python -m pytest -q
 
 Readiness Gate возвращает `not_ready`, пока tools не обнаружены и не нормализованы. Это блокирует запуск агентного контура до появления доступных read-only capabilities.
 
-MCP discovery получает `tools/list`, принимает только инструменты, перечисленные в policy, сохраняет нормализованный snapshot в PostgreSQL и отправляет на MCP Server исходное имя инструмента. Неизвестные инструменты отклоняются до сетевого запроса. Readiness становится `ready` только после успешного discovery через `/api/v1/system/mcp/tools`; policy без реальных EDT tool names остаётся `NOT READY`. PostgreSQL создаёт отдельные migration/runtime роли и default privileges для runtime-запросов.
+MCP discovery получает `tools/list`, принимает только инструменты, перечисленные в policy, сохраняет нормализованный snapshot в PostgreSQL и отправляет на MCP Server исходное имя инструмента. Неизвестные инструменты отклоняются до сетевого запроса. Readiness становится `ready` только после успешного discovery и покрытия capabilities всех трёх агентов; policy без реальных EDT tool names остаётся `NOT READY`. PostgreSQL создаёт отдельные migration/runtime роли и default privileges для runtime-запросов.
 
 Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
 

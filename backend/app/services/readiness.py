@@ -12,6 +12,7 @@ class ReadinessReport:
     only_read_only_tools_published: bool
     toolset_checksum: str
     reasons: tuple[str, ...]
+    agent_capabilities: dict[str, tuple[str, ...]]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -22,12 +23,18 @@ class ReadinessReport:
             "onlyReadOnlyToolsPublished": self.only_read_only_tools_published,
             "toolsetChecksum": self.toolset_checksum,
             "reasons": list(self.reasons),
+            "agentCapabilities": {
+                code: list(missing) for code, missing in self.agent_capabilities.items()
+            },
         }
 
 
 class ReadinessGate:
     def evaluate(
-        self, snapshot: PolicySnapshot, discovered_tools: set[str] | None = None
+        self,
+        snapshot: PolicySnapshot,
+        discovered_tools: set[str] | None = None,
+        required_capabilities: dict[str, set[str]] | None = None,
     ) -> ReadinessReport:
         reasons: list[str] = []
         only_read_only = len(snapshot.published_tools) == len(snapshot.normalized_tools)
@@ -41,6 +48,15 @@ class ReadinessGate:
         elif discovered_tools is not None and set(snapshot.published_tools) - discovered_tools:
             reasons.append("policy_tools_missing_on_mcp")
 
+        available_categories = {tool.category for tool in snapshot.published_tools.values()}
+        missing_by_agent = {
+            code: tuple(sorted(required - available_categories))
+            for code, required in (required_capabilities or {}).items()
+            if required - available_categories
+        }
+        if missing_by_agent:
+            reasons.append("agent_capabilities_missing")
+
         capabilities_status = "ready" if snapshot.normalized_tools and not reasons else "not_discovered"
         status = "ready" if not reasons else "not_ready"
         return ReadinessReport(
@@ -51,4 +67,5 @@ class ReadinessGate:
             only_read_only_tools_published=only_read_only,
             toolset_checksum=snapshot.toolset_checksum,
             reasons=tuple(reasons),
+            agent_capabilities=missing_by_agent,
         )

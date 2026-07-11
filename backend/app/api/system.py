@@ -8,6 +8,7 @@ from app.mcp.connector import McpConnector
 from app.mcp.policy import PolicyError
 from app.db.session import get_db
 from app.services.mcp_discovery import McpDiscoveryService
+from app.services.capabilities import evaluate_capabilities
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -30,7 +31,7 @@ def policy_status(request: Request) -> dict[str, object]:
 
 @router.get("/readiness")
 def readiness(request: Request) -> dict[str, object]:
-    report = ReadinessGate().evaluate(
+    report = evaluate_capabilities(
         request.app.state.policy_snapshot,
         set(request.app.state.discovered_tools),
     )
@@ -39,6 +40,19 @@ def readiness(request: Request) -> dict[str, object]:
     result["database"] = "not_checked"
     result["mcp"] = "not_checked"
     return result
+
+
+@router.get("/capabilities")
+def capabilities(request: Request) -> dict[str, object]:
+    report = evaluate_capabilities(
+        request.app.state.policy_snapshot,
+        set(request.app.state.discovered_tools),
+    )
+    return {
+        "status": report.status,
+        "published": sorted(request.app.state.policy_snapshot.published_tools),
+        "missingByAgent": report.as_dict()["agentCapabilities"],
+    }
 
 
 @router.get("/mcp/health")
@@ -75,7 +89,7 @@ async def discover_mcp_tools(
 
 @router.get("/ready")
 def ready(request: Request, db: Session = Depends(get_db)) -> dict[str, object]:
-    report = ReadinessGate().evaluate(
+    report = evaluate_capabilities(
         request.app.state.policy_snapshot,
         set(request.app.state.discovered_tools),
     )

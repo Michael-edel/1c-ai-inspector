@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
+from app.services.capabilities import evaluate_capabilities
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
 
@@ -47,7 +48,7 @@ def create_task(
     db: Session = Depends(get_db),
 ) -> TaskResponse:
     snapshot = request.app.state.policy_snapshot
-    readiness = ReadinessGate().evaluate(snapshot, set(request.app.state.discovered_tools))
+    readiness = evaluate_capabilities(snapshot, set(request.app.state.discovered_tools))
     if readiness.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

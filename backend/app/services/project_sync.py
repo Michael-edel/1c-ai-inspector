@@ -21,6 +21,8 @@ def extract_project_items(result: dict[str, Any]) -> list[dict[str, Any]]:
             if item.get("type") == "text":
                 try:
                     raw = json.loads(item.get("text", ""))
+                    if isinstance(raw, dict):
+                        raw = raw.get("projects")
                 except (TypeError, ValueError) as exc:
                     raise ProjectSyncError("MCP_PROJECTS_RESPONSE_INVALID") from exc
                 break

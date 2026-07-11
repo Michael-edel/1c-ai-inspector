@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -80,10 +81,23 @@ class McpConnector:
         self._request_id += 1
         payload = {"jsonrpc": "2.0", "id": self._request_id, "method": method, "params": params}
         response = await self._post(payload)
-        body = response.json()
+        body = self._decode_response(response)
         if "error" in body:
             raise RuntimeError(f"MCP request failed: {body['error']}")
         return body.get("result", {})
+
+    @staticmethod
+    def _decode_response(response: httpx.Response) -> dict[str, Any]:
+        if response.headers.get("content-type", "").startswith("text/event-stream"):
+            events = [
+                line.removeprefix("data: ").strip()
+                for line in response.text.splitlines()
+                if line.startswith("data:")
+            ]
+            if not events:
+                raise RuntimeError("MCP stream contained no data")
+            return json.loads(events[-1])
+        return response.json()
 
     async def _notify(self, method: str, params: dict[str, Any]) -> None:
         await self._post({"jsonrpc": "2.0", "method": method, "params": params})

@@ -73,3 +73,29 @@ def test_unknown_tool_is_rejected_before_http(tmp_path: Path) -> None:
 
     with pytest.raises(ToolNotAllowedError):
         asyncio.run(connector.call_tool("delete_module", {}))
+
+
+def test_streamable_http_sse_response_is_decoded(tmp_path: Path) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content='event: message\ndata: {"jsonrpc":"2.0","id":2,"result":{"tools":[]}}\n\n',
+        )
+
+    async def scenario() -> list[object]:
+        connector = McpConnector(
+            "http://mcp.test",
+            _policy(tmp_path),
+            transport=httpx.MockTransport(handler),
+        )
+        result = await connector.discover_tools()
+        await connector.close()
+        return result
+
+    assert asyncio.run(scenario()) == []

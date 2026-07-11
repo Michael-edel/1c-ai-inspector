@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     database_url: PostgresDsn
     migration_database_url: PostgresDsn
     mcp_server_url: AnyHttpUrl
+    mcp_projects_tool: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.5"
     model_api_key: str = Field(min_length=1)

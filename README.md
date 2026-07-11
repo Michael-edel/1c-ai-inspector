@@ -45,6 +45,8 @@ Invoke-RestMethod http://localhost:8000/api/v1/system/policy
 Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 ```
 
+Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.scriptsacceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test.
+
 Тесты без Docker:
 
 ```powershell

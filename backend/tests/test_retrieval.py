@@ -8,7 +8,7 @@ import pytest
 from app.agents.registry import AgentRegistry
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
-from app.services.retrieval import retrieve_task_context
+from app.services.retrieval import RetrievalError, retrieve_task_context
 
 
 def _snapshot(tmp_path: Path):
@@ -72,3 +72,29 @@ def test_retrieval_limit_is_enforced_before_http(tmp_path: Path) -> None:
                 max_tool_calls=1,
             )
         )
+
+
+def test_failed_mcp_call_keeps_audit_record(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(500)
+
+    connector = McpConnector(
+        "http://mcp.test", snapshot, transport=httpx.MockTransport(handler)
+    )
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": {}}]},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                connector,
+            )
+        )
+    assert error.value.calls[0]["status"] == "failed"

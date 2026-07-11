@@ -114,6 +114,19 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
 
             retrieval = asyncio.run(run_retrieval())
         except (RetrievalError, ToolNotAllowedError, ValueError) as exc:
+            if isinstance(exc, RetrievalError) and exc.calls:
+                with session.begin():
+                    for call in exc.calls:
+                        AuditRecorder(session).record_tool_call(
+                            task_id,
+                            call["toolName"],
+                            "read-only",
+                            call["input"],
+                            call["output"],
+                            call["status"],
+                            call["durationMs"],
+                            call.get("errorCode"),
+                        )
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():
             for call in retrieval.calls:

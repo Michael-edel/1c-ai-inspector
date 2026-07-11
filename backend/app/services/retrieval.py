@@ -10,6 +10,11 @@ from app.mcp.policy import PolicySnapshot
 class RetrievalError(ValueError):
     """Raised when a task requests an unsafe or malformed retrieval call."""
 
+    def __init__(self, code: str, calls: list[dict[str, Any]] | None = None):
+        super().__init__(code)
+        self.code = code
+        self.calls = calls or []
+
 
 @dataclass(frozen=True)
 class RetrievalResult:
@@ -56,7 +61,7 @@ async def retrieve_task_context(
                 "errorCode": "MCP_TOOL_CALL_FAILED",
                 "durationMs": int((time.perf_counter() - started) * 1000),
             })
-            raise RetrievalError("MCP_TOOL_CALL_FAILED") from exc
+            raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
         calls.append({
             "toolName": tool_name,
             "input": arguments,

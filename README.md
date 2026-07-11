@@ -73,6 +73,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.
+Даже failed MCP calls сохраняются в `tool_calls` с `status=failed` и безопасным `errorCode`.
 
 MCP connector использует Streamable HTTP session lifecycle: `initialize`, `notifications/initialized`, `Mcp-Session-Id`, `MCP-Protocol-Version`, повторное использование клиента и уникальные JSON-RPC request ids с проверкой response id. Ответы JSON и `text/event-stream` поддерживаются; project sync принимает list и вложенный `{projects: [...]}`.
 

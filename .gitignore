@@ -12,4 +12,5 @@ dist/
 build/
 node_modules/
 .vite/
+*.tsbuildinfo
 postgres_data/

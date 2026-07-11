@@ -91,4 +91,4 @@ npm run build
 
 Для полной проверки Compose требуется запущенный Docker Engine. На текущем окружении `docker compose config` проверен, но сборка контейнеров не выполнялась, потому что Docker Engine недоступен.
 
-Пока не реализована полноценная синхронизация EDT-проектов и retrieval-контекст из MCP. Транспорт модели подключён через `MODEL_API_URL`, но реальный запуск требует рабочего read-only MCP endpoint, заполненной policy и ключа модели.
+Синхронизация проектов и retrieval-контекст реализованы через конфигурируемые read-only MCP tools. Реальный запуск всё ещё требует рабочего EDT MCP endpoint, заполненной policy и ключа модели. Docker-образы запускаются от non-root пользователей и используют lockfile frontend dependencies.

@@ -9,10 +9,13 @@ WORKDIR /app
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY backend/app /app/app
-COPY backend/migrations /app/migrations
-COPY backend/alembic.ini /app/alembic.ini
-COPY mcp_policy.yaml /app/mcp_policy.yaml
+RUN addgroup --system app && adduser --system --ingroup app app
+COPY --chown=app:app backend/app /app/app
+COPY --chown=app:app backend/migrations /app/migrations
+COPY --chown=app:app backend/alembic.ini /app/alembic.ini
+COPY --chown=app:app mcp_policy.yaml /app/mcp_policy.yaml
+
+USER app
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

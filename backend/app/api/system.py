@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.mcp.connector import McpConnector
 from app.mcp.policy import PolicyError
+from app.db.session import get_db
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -43,3 +47,18 @@ async def discover_mcp_tools(request: Request) -> dict[str, object]:
         "tools": [tool.model_dump(mode="json") for tool in tools],
         "toolsetChecksum": request.app.state.policy_snapshot.toolset_checksum,
     }
+
+
+@router.get("/ready")
+def ready(request: Request, db: Session = Depends(get_db)) -> dict[str, object]:
+    report = ReadinessGate().evaluate(request.app.state.policy_snapshot)
+    if report.status != "ready":
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "AGENT_TOOLSET_NOT_READY", "reasons": list(report.reasons)},
+        )
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail={"code": "DATABASE_UNAVAILABLE"}) from exc
+    return {"status": "ready", "database": "ok", "policy": "ready"}

@@ -13,6 +13,7 @@ Read-only web-приложение для анализа кода 1С через
 - нормализацию toolset с отдельным checksum;
 - публикацию только `read-only` tools;
 - `/health`, `/api/v1/system/readiness` и `/api/v1/system/policy`.
+- `/api/v1/system/ready` с проверкой toolset и PostgreSQL.
 - `/api/v1/system/mcp/tools` для discovery разрешённых MCP tools.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/agents` с тремя агентами v0.1.
@@ -37,6 +38,7 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 Invoke-RestMethod http://localhost:8000/health
 Invoke-RestMethod http://localhost:8000/api/v1/system/readiness
 Invoke-RestMethod http://localhost:8000/api/v1/system/policy
+Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 ```
 
 Тесты без Docker:
@@ -60,5 +62,17 @@ Task Orchestrator не создаёт агентную задачу, если to
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 
 Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.
+
+Финальная локальная проверка без Docker:
+
+```powershell
+cd backend
+python -m pytest -q
+python -m compileall -q app migrations tests
+cd ..\frontend
+npm run build
+```
+
+Для полной проверки Compose требуется запущенный Docker Engine. На текущем окружении `docker compose config` проверен, но сборка контейнеров не выполнялась, потому что Docker Engine недоступен.
 
 Пока не реализованы полноценные синхронизация EDT-проектов, Code Assistant, Query Agent, Audit Agent, structured findings и вызов модели. MCP connector уже имеет серверную проверку policy, но транспорт и реальное обнаружение tools будут расширены следующим шагом.

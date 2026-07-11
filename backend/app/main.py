@@ -7,6 +7,7 @@ from app.api.projects import router as projects_router
 from app.api.system import router as system_router
 from app.api.tasks import router as tasks_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.mcp.policy import PolicyProvider
 
 
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="1C AI Inspector", version="0.1.0", lifespan=lifespan)
+configure_logging()
 app.include_router(system_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)

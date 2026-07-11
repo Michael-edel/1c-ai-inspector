@@ -1,4 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap");
+.ghost-button.compact { padding: 7px 9px; font-size: 10px; }
+.ghost-button:disabled { opacity: .5; cursor: not-allowed; }
+.empty-note { color: #7f91a9; font-size: 12px; }
 :root { color: #e9eff8; background: #0b111d; font-family: "Manrope", sans-serif; font-synthesis: none; }
 * { box-sizing: border-box; } body { margin: 0; min-width: 320px; background: #0b111d; } button, input, select, textarea { font: inherit; } button { cursor: pointer; }
 .shell { min-height: 100vh; display: grid; grid-template-columns: 236px 1fr; background: radial-gradient(circle at 77% 8%, #19324c 0, transparent 30%), #0b111d; }

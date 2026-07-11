@@ -18,3 +18,13 @@ def test_policy_readiness() -> None:
         assert response.json()["status"] == "not_ready"
         assert response.json()["capabilitiesStatus"] == "not_discovered"
         assert "no_tools_discovered" in response.json()["reasons"]
+
+
+def test_task_creation_is_blocked_until_toolset_is_ready() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/tasks",
+            json={"projectId": "prj_1", "agentId": "agt_1", "request": {"text": "test"}},
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "AGENT_TOOLSET_NOT_READY"

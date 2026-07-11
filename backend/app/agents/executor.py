@@ -23,9 +23,13 @@ def execute_agent(
     definition: AgentDefinition,
     settings: Settings,
     adapter: ModelAdapter,
+    extra_context: list[dict[str, object]] | None = None,
 ) -> StructuredReport:
     try:
         request = json.loads(task.request_json)
+        if extra_context:
+            request = dict(request)
+            request["context"] = list(request.get("context", [])) + extra_context
         context = ContextBuilder(settings).build(request)
     except ContextLimitError as exc:
         raise AgentExecutionError(str(exc)) from exc

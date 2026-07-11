@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import time
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -12,10 +13,13 @@ from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.core.enums import TaskStatus
 from app.db.session import get_session_factory
+from app.mcp.connector import McpConnector, ToolNotAllowedError
+from app.mcp.policy import PolicyProvider
 from app.modeling import OpenAICompatibleAdapter
 from app.models import Agent, Task, TaskEvent
 from app.services.audit import AuditRecorder
 from app.services.findings import persist_findings
+from app.services.retrieval import RetrievalError, retrieve_task_context
 
 logger = logging.getLogger(__name__)
 
@@ -81,23 +85,57 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             )
         with session.begin():
             task = session.get(Task, task_id)
-            if task is not None:
-                agent = session.get(Agent, task.agent_id)
-                if agent is None:
-                    raise AgentExecutionError("AGENT_NOT_FOUND")
-                settings = get_settings()
-                report = execute_agent(
-                    session,
-                    task,
-                    AgentRegistry().get(agent.code),
-                    settings,
-                    OpenAICompatibleAdapter(settings),
+            if task is None:
+                raise AgentExecutionError("TASK_NOT_FOUND")
+            agent = session.get(Agent, task.agent_id)
+            if agent is None:
+                raise AgentExecutionError("AGENT_NOT_FOUND")
+            agent_code = agent.code
+            request_json = task.request_json
+        settings = get_settings()
+        definition = AgentRegistry().get(agent_code)
+        snapshot = PolicyProvider(settings.mcp_policy_path).load()
+        try:
+            request = json.loads(request_json)
+            retrieval = asyncio.run(
+                retrieve_task_context(
+                    request,
+                    definition,
+                    snapshot,
+                    McpConnector(str(settings.mcp_server_url), snapshot),
                 )
-                task.status = report.status
-                task.heartbeat_at = datetime.now(timezone.utc)
-                task.result_json = report.model_dump_json(by_alias=True)
-                persist_findings(session, report)
-                AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent.code})
+            )
+        except (RetrievalError, ToolNotAllowedError, ValueError) as exc:
+            raise AgentExecutionError("RETRIEVAL_FAILED") from exc
+        with session.begin():
+            for call in retrieval.calls:
+                AuditRecorder(session).record_tool_call(
+                    task_id,
+                    call["toolName"],
+                    "read-only",
+                    call["input"],
+                    call["output"],
+                    call["status"],
+                    call["durationMs"],
+                    call.get("errorCode"),
+                )
+        with session.begin():
+            task = session.get(Task, task_id)
+            if task is None:
+                raise AgentExecutionError("TASK_NOT_FOUND")
+            report = execute_agent(
+                session,
+                task,
+                definition,
+                settings,
+                OpenAICompatibleAdapter(settings),
+                retrieval.context,
+            )
+            task.status = report.status
+            task.heartbeat_at = datetime.now(timezone.utc)
+            task.result_json = report.model_dump_json(by_alias=True)
+            persist_findings(session, report)
+            AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent_code})
     except AgentExecutionError as exc:
         with session.begin():
             task = session.get(Task, task_id)

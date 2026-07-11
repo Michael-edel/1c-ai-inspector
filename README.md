@@ -69,6 +69,8 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
+Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
+
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 
 Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.

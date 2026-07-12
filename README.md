@@ -91,6 +91,8 @@ Model adapter принимает JSON string, content blocks и JSON в markdown
 Agent prompt получает фактическую JSON Schema `StructuredReport`, но итоговый ответ всё равно проверяется сервером перед сохранением task и findings.
 Telemetry в `StructuredReport` не доверяет значениям модели: model usage берётся из adapter, а tool usage — из фактически записанных retrieval calls и их длительности.
 
+Live-проверка Query Agent подтверждена на подключенной базе: `validate_query` проверил запрос без выполнения данных, `get_metadata_tree` подтвердил наличие справочника, а итоговый report сохранил validation, audit и фактическое model/tool usage.
+
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 
 Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, токены и estimated cost.

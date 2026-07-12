@@ -62,6 +62,14 @@ try {
         if (-not $diagnostics.model.apiKeyConfigured) { throw "Model API key is not configured" }
         Invoke-RestMethod http://127.0.0.1:8000/api/v1/system/mcp/health | Out-Null
         Invoke-RestMethod http://127.0.0.1:8000/api/v1/system/mcp/tools | Out-Null
+        if ($values["MCP_TRANSPORT"] -eq "bridge") {
+            $probeUrl = if ($values["MCP_LIVE_PROBE_URL"]) { $values["MCP_LIVE_PROBE_URL"] } else { "http://127.0.0.1:8091" }
+            $probeTool = if ($values["MCP_SMOKE_TOOL"]) { $values["MCP_SMOKE_TOOL"] } else { "get_configuration_info" }
+            $probeArguments = if ($values["MCP_SMOKE_ARGUMENTS"]) { $values["MCP_SMOKE_ARGUMENTS"] | ConvertFrom-Json } else { @{} }
+            $probeBody = @{ name = $probeTool; arguments = $probeArguments } | ConvertTo-Json -Depth 10
+            $probeHeaders = @{ Authorization = "Bearer $($values["MCP_BRIDGE_TOKEN"])" }
+            Invoke-RestMethod -Method Post -Uri "$probeUrl/tools/call" -Headers $probeHeaders -ContentType "application/json" -Body $probeBody | Out-Null
+        }
         if ($values["MCP_PROJECTS_TOOL"]) {
             Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/projects/sync | Out-Null
         }

@@ -10,6 +10,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 
+`POST /api/v1/patch-proposals/{id}/approve` принимает `actor` и `note` только для checkpointed proposal. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;

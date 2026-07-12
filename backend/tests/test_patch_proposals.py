@@ -2,6 +2,7 @@ import pytest
 
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot
 from app.services.patch_checkpoint import create_checkpoint_ref
+from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -34,3 +35,17 @@ def test_checkpoint_ref_is_deterministic_and_content_bound() -> None:
     assert first == second
     assert first.startswith("proposal-checkpoint:pp_123:")
     assert first != changed
+
+
+def test_patch_workflow_requires_checkpoint_before_approval() -> None:
+    assert approve_status("checkpointed") == "approved"
+    assert approve_status("awaiting_approval") == "approved"
+    with pytest.raises(PatchWorkflowError, match="PATCH_NOT_READY_FOR_APPROVAL"):
+        approve_status("proposed")
+
+
+def test_patch_workflow_rejects_only_final_decisions() -> None:
+    assert reject_status("proposed") == "rejected"
+    assert reject_status("checkpointed") == "rejected"
+    with pytest.raises(PatchWorkflowError, match="PATCH_DECISION_ALREADY_FINAL"):
+        reject_status("approved")

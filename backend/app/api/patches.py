@@ -12,6 +12,7 @@ from app.models import PatchProposal, Project, Task
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
 from app.services.patch_impact import analyze_patch_impact
 from app.services.patch_checkpoint import create_checkpoint_ref
+from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -31,6 +32,11 @@ class PatchProposalCreateRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=10_000)
     source_revision: str | None = Field(default=None, alias="sourceRevision", max_length=128)
     files: list[PatchFileInput] = Field(min_length=1, max_length=50)
+
+
+class PatchDecisionRequest(BaseModel):
+    actor: str = Field(min_length=1, max_length=128)
+    note: str = Field(min_length=1, max_length=10_000)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -107,6 +113,56 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
     }
 
 
+@router.post("/{proposal_id}/approve")
+def approve_patch_proposal(
+    proposal_id: str,
+    payload: PatchDecisionRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    try:
+        proposal.status = approve_status(proposal.status)
+    except PatchWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    proposal.approved_by = payload.actor
+    proposal.approval_note = payload.note
+    db.commit()
+    return {
+        "proposalId": proposal.id,
+        "status": proposal.status,
+        "approvedBy": proposal.approved_by,
+        "approvalNote": proposal.approval_note,
+        "applied": False,
+    }
+
+
+@router.post("/{proposal_id}/reject")
+def reject_patch_proposal(
+    proposal_id: str,
+    payload: PatchDecisionRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    try:
+        proposal.status = reject_status(proposal.status)
+    except PatchWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    proposal.approved_by = payload.actor
+    proposal.approval_note = payload.note
+    db.commit()
+    return {
+        "proposalId": proposal.id,
+        "status": proposal.status,
+        "decidedBy": proposal.approved_by,
+        "decisionNote": proposal.approval_note,
+        "applied": False,
+    }
+
+
 def _proposal_response(proposal: PatchProposal) -> dict[str, object]:
     return {
         "id": proposal.id,
@@ -121,5 +177,6 @@ def _proposal_response(proposal: PatchProposal) -> dict[str, object]:
         "files": json.loads(proposal.files_json),
         "impact": json.loads(proposal.impact_json),
         "checkpointRef": proposal.checkpoint_ref,
+        "approvedBy": proposal.approved_by,
         "approvalNote": proposal.approval_note,
     }

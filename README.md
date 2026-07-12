@@ -75,6 +75,14 @@ Live acceptance после настройки `.env` запускается ко
 
 Скрипт отклоняет `execute_query`, write tools и findings без evidence.
 
+Финальную приемку v0.2 Patch Planner запускайте при работающем Compose:
+
+```powershell
+.\scripts\v02-acceptance.ps1
+```
+
+Скрипт создает временные proposal-only данные, проверяет candidate impact, логический checkpoint, approve/reject и журнал из событий. Он не применяет diff, не меняет workspace/Git и не записывает изменения в конфигурацию 1С.
+
 Тесты без Docker:
 
 ```powershell

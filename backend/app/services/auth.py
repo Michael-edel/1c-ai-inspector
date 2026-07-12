@@ -17,6 +17,7 @@ class AuthContext:
     subject: str
     role: str
     expires_at: int
+    auth_source: str = "signed"
 
 
 def issue_auth_token(subject: str, role: str, secret: str, ttl_seconds: int = 3600) -> str:

@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     prompts_path: Path = Path("/app/prompts")
     app_environment: str = "sandbox"
     inspector_auth_secret: str | None = Field(default=None, min_length=32)
+    inspector_auth_mode: Literal["signed", "jwks"] = "signed"
+    auth_jwks_url: AnyHttpUrl | None = None
+    auth_issuer: str | None = None
+    auth_audience: str | None = None
+    auth_roles_claim: str = "roles"
+    auth_subject_claim: str = "sub"
+    auth_jwks_cache_ttl_sec: int = Field(default=300, ge=30, le=86_400)
 
     @field_validator("app_environment")
     @classmethod

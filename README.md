@@ -1,8 +1,8 @@
-# 1C AI Inspector v0.4
+# 1C AI Inspector v0.5
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
-Текущий этап v0.4 развивает proposal-only Patch Planner: система использует signed auth/RBAC, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
+Текущий этап v0.5 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
@@ -22,7 +22,7 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 
-Approve, reject и package download требуют signed Bearer token из `INSPECTOR_AUTH_SECRET`. Subject и role берутся из проверенной подписи, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.
+Approve, reject и package download требуют Bearer token. В локальном режиме `INSPECTOR_AUTH_MODE=signed` Inspector проверяет HMAC-подпись из `INSPECTOR_AUTH_SECRET`; в production режиме `INSPECTOR_AUTH_MODE=jwks` он загружает RSA-ключи из `AUTH_JWKS_URL` и проверяет `AUTH_ISSUER`, `AUTH_AUDIENCE`, expiry, subject и роли. Subject и role берутся из проверенного токена, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.
 
 Approval policy учитывает environment и impact risk: `sandbox` с полностью evidenced impact доступен maintainer/owner, `test` требует owner, а любой оставшийся `candidate` требует owner. Approval также блокируется, если environment proposal не совпадает с `APP_ENVIRONMENT` backend.
 
@@ -61,7 +61,7 @@ notepad .env
 docker compose --env-file .env up --build
 ```
 
-Для защищенных approval/package endpoint задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. Signed Bearer tokens должен выпускать внешний issuer или gateway; Inspector только проверяет подпись и expiry.
+Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. Для production выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
 
 После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 
@@ -135,7 +135,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Patch Planner в v0.4 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, read-only impact evidence и validation gates, затем можно создать signed package и пройти approval policy. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
 
-Текущий signed-token слой заменяет self-claimed role, но не является SSO/IdP: перед production нужно подключить внешний issuer или корпоративный gateway, который будет выпускать эти claims.
+Signed-режим оставлен для локальной разработки. Для production используйте внешний IdP или корпоративный gateway в режиме JWKS; Inspector принимает только JWT с поддержанным RSA-алгоритмом и проверяет подпись до извлечения роли.
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.

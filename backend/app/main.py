@@ -10,6 +10,7 @@ from app.api.tasks import router as tasks_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.mcp.policy import PolicyProvider
+from app.services.jwks_auth import JwksProvider
 
 
 @asynccontextmanager
@@ -18,6 +19,11 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.policy_snapshot = PolicyProvider(settings.mcp_policy_path).load()
     app.state.discovered_tools = {}
+    app.state.jwks_provider = (
+        JwksProvider(str(settings.auth_jwks_url), settings.auth_jwks_cache_ttl_sec)
+        if settings.auth_jwks_url
+        else None
+    )
     yield
 
 

@@ -1,4 +1,4 @@
-param([string]$EnvFile = ".env", [switch]$WithKeycloak)
+param([string]$EnvFile = ".env", [switch]$WithKeycloak, [switch]$WithEdge)
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -17,6 +17,7 @@ try {
     if ($values["INSPECTOR_PACKAGE_SIGNING_SECRET"].Length -lt 32) { throw "INSPECTOR_PACKAGE_SIGNING_SECRET must be at least 32 characters" }
 
     $composeFiles = @("-f", "docker-compose.yml", "-f", "docker-compose.production.yml")
+    if ($WithEdge -and -not $WithKeycloak) { throw "WithEdge requires WithKeycloak" }
     if ($WithKeycloak) {
         foreach ($key in @("KEYCLOAK_PUBLIC_URL", "KEYCLOAK_DB_NAME", "KEYCLOAK_DB_USER", "KEYCLOAK_DB_PASSWORD", "KEYCLOAK_ADMIN_USERNAME", "KEYCLOAK_ADMIN_PASSWORD")) {
             if (-not $values[$key] -or $values[$key] -like "replace-with-*") { throw "Not configured in production env: $key" }
@@ -27,11 +28,22 @@ try {
         }
         $composeFiles += @("-f", "docker-compose.keycloak.production.yml")
     }
+    if ($WithEdge) {
+        foreach ($key in @("APP_DOMAIN", "IDP_DOMAIN")) {
+            if (-not $values[$key] -or $values[$key] -like "replace-with-*") { throw "Not configured in production env: $key" }
+            if ($values[$key] -match "localhost|127\.0\.0\.1|example\.com") { throw "$key must be a real DNS name" }
+        }
+        if ($values["APP_DOMAIN"] -eq $values["IDP_DOMAIN"]) { throw "APP_DOMAIN and IDP_DOMAIN must be different" }
+        $composeFiles += @("-f", "docker-compose.edge.production.yml")
+    }
 
     $config = & docker compose --env-file $resolvedEnv @composeFiles config 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "Production Compose config failed" }
     if ($config -match "published: 5432") { throw "PostgreSQL must not be published in production Compose" }
-    $scope = if ($WithKeycloak) { "application and persistent Keycloak" } else { "application" }
+    if ($WithEdge -and ($config -match "published: 8000" -or $config -match "published: 5173")) {
+        throw "Backend and frontend ports must stay internal when edge proxy is enabled"
+    }
+    $scope = if ($WithEdge) { "application, persistent Keycloak and edge TLS" } elseif ($WithKeycloak) { "application and persistent Keycloak" } else { "application" }
     Write-Output "Production preflight passed: $scope secrets, Compose override and closed PostgreSQL port verified."
 } finally {
     Pop-Location

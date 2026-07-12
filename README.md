@@ -4,6 +4,8 @@ Read-only web-приложение для анализа кода 1С через
 
 Текущий этап v0.2 добавляет proposal-only Patch Planner: система готовит изменения и diff, но не применяет их к 1С, workspace или Git.
 
+`POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;

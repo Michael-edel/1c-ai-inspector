@@ -12,7 +12,7 @@ from app.services.patch_workflow import (
     authorize_rejection,
     reject_status,
 )
-from app.services.patch_package import build_patch_package
+from app.services.patch_package import build_patch_package, verify_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
 from app.services.auth import AuthError, issue_auth_token, verify_auth_token
@@ -89,14 +89,24 @@ def test_patch_package_contains_manifest_and_diff_without_apply_permission() -> 
         impact_json="[]",
         checkpoint_ref="proposal-checkpoint:pp_package:hash",
     )
-    package = build_patch_package(proposal)
+    package = build_patch_package(proposal, "s" * 32)
 
     with ZipFile(BytesIO(package)) as archive:
-        assert set(archive.namelist()) == {"manifest.json", "proposal.diff", "README.txt"}
+        assert set(archive.namelist()) == {"manifest.json", "proposal.diff", "README.txt", "signature.json"}
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["proposalId"] == "pp_package"
         assert manifest["applyAllowed"] is False
+        assert manifest["signatureAlgorithm"] == "HMAC-SHA256"
         assert archive.read("proposal.diff").startswith(b"--- a/module.bsl")
+    assert verify_patch_package(package, "s" * 32, "pp_package")["valid"] is True
+    tampered_buffer = BytesIO()
+    with ZipFile(BytesIO(package)) as source, ZipFile(tampered_buffer, "w") as tampered:
+        for entry in source.infolist():
+            content = source.read(entry.filename)
+            if entry.filename == "proposal.diff":
+                content = content.replace(b"module.bsl", b"changed.bsl")
+            tampered.writestr(entry, content)
+    assert verify_patch_package(tampered_buffer.getvalue(), "s" * 32, "pp_package")["valid"] is False
 
 
 def test_source_revalidation_accepts_matching_snapshot() -> None:

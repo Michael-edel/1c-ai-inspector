@@ -25,7 +25,7 @@ from app.services.patch_workflow import (
     authorize_rejection,
     reject_status,
 )
-from app.services.patch_package import build_patch_package
+from app.services.patch_package import build_patch_package, verify_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
 from app.services.patch_mcp_evidence import extract_search_evidence
@@ -422,13 +422,14 @@ def get_patch_events(proposal_id: str, db: Session = Depends(get_db)) -> dict[st
 @router.get("/{proposal_id}/package")
 def download_patch_package(
     proposal_id: str,
+    request: Request,
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> Response:
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
-    package = build_patch_package(proposal)
+    package = build_patch_package(proposal, request.app.state.settings.inspector_auth_secret)
     record_patch_event(db, proposal.id, "package_exported", identity.subject, {"applyAllowed": False})
     db.commit()
     return Response(
@@ -436,3 +437,25 @@ def download_patch_package(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{proposal.id}.zip"'},
     )
+
+
+@router.post("/{proposal_id}/package/verify")
+async def verify_downloaded_package(
+    proposal_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(PatchProposal, proposal_id) is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    package = await request.body()
+    if len(package) > 10_000_000:
+        raise HTTPException(status_code=413, detail="Package is too large")
+    result = verify_patch_package(
+        package,
+        request.app.state.settings.inspector_auth_secret,
+        expected_proposal_id=proposal_id,
+    )
+    if not result["valid"]:
+        raise HTTPException(status_code=422, detail=result["reason"])
+    return result

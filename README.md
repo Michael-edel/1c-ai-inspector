@@ -140,6 +140,8 @@ Production deployment использует override `docker-compose.production.y
 
 Резервная копия PostgreSQL: `.\scripts\backup.ps1 -OutputDirectory .\backups`. Скрипт создает custom-format dump, проверяет его через `pg_restore --list` и удаляет только dump-файлы старше `KeepDays`. Восстановление намеренно требует явного подтверждения: `.\scripts\restore.ps1 -BackupFile .\backups\<file>.dump -ConfirmRestore`.
 
+Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, отсутствие write tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
+
 Тесты без Docker:
 
 ```powershell

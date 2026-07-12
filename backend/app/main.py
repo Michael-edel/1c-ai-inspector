@@ -4,6 +4,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.api.agents import router as agents_router
 from app.api.projects import router as projects_router
@@ -44,6 +45,16 @@ app.include_router(agents_router)
 async def request_observability(request, call_next):
     request_id = uuid4().hex
     started = perf_counter()
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            too_large = int(content_length) > request.app.state.settings.max_request_bytes
+        except ValueError:
+            too_large = True
+        if too_large:
+            response = JSONResponse(status_code=413, content={"detail": "REQUEST_TOO_LARGE"})
+            _set_security_headers(response, request_id)
+            return response
     try:
         response = await call_next(request)
     except Exception:
@@ -59,7 +70,7 @@ async def request_observability(request, call_next):
             },
         )
         raise
-    response.headers["X-Request-ID"] = request_id
+    _set_security_headers(response, request_id)
     request_logger.info(
         "http_request",
         extra={
@@ -73,6 +84,15 @@ async def request_observability(request, call_next):
         },
     )
     return response
+
+
+def _set_security_headers(response, request_id: str) -> None:
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cache-Control"] = "no-store"
 
 
 @app.get("/health")

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     model_output_cost_per_1k: float = Field(default=0, ge=0)
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)
+    max_request_bytes: int = Field(default=12_000_000, ge=64_000, le=50_000_000)
     task_timeout_sec: int = Field(default=300, ge=1, le=86_400)
     worker_lease_timeout_sec: int = Field(default=600, ge=5, le=86_400)
     mcp_policy_path: Path = Path("/app/mcp_policy.yaml")

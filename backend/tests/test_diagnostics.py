@@ -14,3 +14,12 @@ def test_diagnostics_do_not_expose_model_api_key() -> None:
         assert body["mcp"]["bridgeTokenConfigured"] in {True, False}
         assert body["auth"]["mode"] == "signed"
         assert body["auth"]["packageSigningConfigured"] in {True, False}
+
+
+def test_health_returns_security_headers() -> None:
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["Referrer-Policy"] == "no-referrer"
+        assert response.headers["Cache-Control"] == "no-store"

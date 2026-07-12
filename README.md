@@ -61,7 +61,7 @@ notepad .env
 docker compose --env-file .env up --build
 ```
 
-Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. Для production выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
+Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. При ротации сначала укажите новый current secret, старый в `INSPECTOR_AUTH_SECRET_PREVIOUS` и Unix deadline в `INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL`; после deadline удалите previous secret. Для production выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
 
 После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 

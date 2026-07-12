@@ -51,6 +51,26 @@ def verify_auth_token(token: str, secret: str, now: int | None = None) -> AuthCo
     return AuthContext(subject=subject, role=role, expires_at=expires_at)
 
 
+def verify_auth_token_with_rotation(
+    token: str,
+    current_secret: str,
+    previous_secret: str | None = None,
+    previous_secret_until: int | None = None,
+    now: int | None = None,
+) -> AuthContext:
+    """Accept the previous signing key only during its explicit grace window."""
+    current_time = int(time.time() if now is None else now)
+    try:
+        return verify_auth_token(token, current_secret, now=current_time)
+    except AuthError as current_error:
+        if not previous_secret or previous_secret_until is None or current_time >= previous_secret_until:
+            raise
+        try:
+            return verify_auth_token(token, previous_secret, now=current_time)
+        except AuthError:
+            raise current_error
+
+
 def _encode(value: str) -> str:
     return base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
 

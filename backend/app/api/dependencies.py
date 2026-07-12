@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.services.auth import AuthContext, AuthError, verify_auth_token
+from app.services.auth import AuthContext, AuthError, verify_auth_token_with_rotation
 from app.services.jwks_auth import JwksAuthError, JwksUnavailableError, verify_jwks_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -22,7 +22,12 @@ async def require_identity(
         if settings.inspector_auth_mode == "signed":
             if not settings.inspector_auth_secret:
                 raise HTTPException(status_code=503, detail="AUTH_NOT_CONFIGURED")
-            return verify_auth_token(credentials.credentials, settings.inspector_auth_secret)
+            return verify_auth_token_with_rotation(
+                credentials.credentials,
+                settings.inspector_auth_secret,
+                settings.inspector_auth_secret_previous,
+                settings.inspector_auth_secret_previous_until,
+            )
         if not settings.auth_jwks_url:
             raise HTTPException(status_code=503, detail="AUTH_JWKS_NOT_CONFIGURED")
         return await verify_jwks_token(

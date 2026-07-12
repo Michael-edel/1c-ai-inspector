@@ -15,7 +15,7 @@ from app.services.patch_workflow import (
 from app.services.patch_package import build_patch_package, verify_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
-from app.services.auth import AuthError, issue_auth_token, verify_auth_token
+from app.services.auth import AuthError, issue_auth_token, verify_auth_token, verify_auth_token_with_rotation
 from app.services.patch_policy import PatchPolicyError, authorize_environment
 
 
@@ -181,6 +181,17 @@ def test_auth_token_verifies_claims_and_rejects_tampering() -> None:
     assert identity.role == "maintainer"
     with pytest.raises(AuthError, match="AUTH_TOKEN_INVALID"):
         verify_auth_token(token + "x", secret, now=1)
+
+
+def test_auth_token_rotation_accepts_previous_secret_only_until_deadline() -> None:
+    current = "c" * 32
+    previous = "p" * 32
+    token = issue_auth_token("user-1", "reviewer", previous, ttl_seconds=60)
+
+    identity = verify_auth_token_with_rotation(token, current, previous, previous_secret_until=100, now=1)
+    assert identity.subject == "user-1"
+    with pytest.raises(AuthError, match="AUTH_TOKEN_INVALID"):
+        verify_auth_token_with_rotation(token, current, previous, previous_secret_until=1, now=1)
 
 
 def test_patch_policy_requires_owner_for_candidates_and_test() -> None:

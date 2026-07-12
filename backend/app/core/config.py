@@ -3,7 +3,7 @@ from pathlib import Path
 
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_ignore_empty=True,
         extra="ignore",
     )
 
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     prompts_path: Path = Path("/app/prompts")
     app_environment: str = "sandbox"
     inspector_auth_secret: str | None = Field(default=None, min_length=32)
+    inspector_auth_secret_previous: str | None = Field(default=None, min_length=32)
+    inspector_auth_secret_previous_until: int | None = Field(default=None, ge=0)
     inspector_auth_mode: Literal["signed", "jwks"] = "signed"
     auth_jwks_url: AnyHttpUrl | None = None
     auth_issuer: str | None = None
@@ -51,6 +54,16 @@ class Settings(BaseSettings):
         if value not in {"sandbox", "test"}:
             raise ValueError("APP_ENVIRONMENT must be sandbox or test in v0.1")
         return value
+
+    @model_validator(mode="after")
+    def validate_secret_rotation(self) -> "Settings":
+        if self.inspector_auth_secret_previous and self.inspector_auth_secret_previous_until is None:
+            raise ValueError("INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL is required with a previous secret")
+        if self.inspector_auth_secret_previous_until is not None and not self.inspector_auth_secret_previous:
+            raise ValueError("INSPECTOR_AUTH_SECRET_PREVIOUS is required with a rotation deadline")
+        if self.inspector_auth_secret and self.inspector_auth_secret == self.inspector_auth_secret_previous:
+            raise ValueError("INSPECTOR_AUTH_SECRET and previous secret must differ")
+        return self
 
 
 @lru_cache(maxsize=1)

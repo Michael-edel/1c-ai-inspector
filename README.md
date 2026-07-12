@@ -156,6 +156,8 @@ Production-вариант дополнительно требует настро
 
 Локальный smoke подтверждает signed compatibility и live EDT MCP; production-вариант нельзя считать пройденным без реальных значений `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE` и запуска внешнего IdP.
 
+Единый UAT/release acceptance запускается командой `.\scripts\release-acceptance.ps1 -KeepRunning`. Он проверяет реальный локальный Keycloak JWT flow, EDT MCP evidence, security/load smoke и PostgreSQL backup. Для EDT-проверки предусмотрены до трех попыток на случай краткого таймаута bridge. Для production env-файла добавьте `-ProductionEnvFile C:\path\to\production.env`; preflight проверит persistent Keycloak и Caddy edge, но не запускает production без явной команды Compose.
+
 Для тестовой среды с локальным IdP используйте Keycloak:
 
 ```powershell

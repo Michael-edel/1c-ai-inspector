@@ -14,6 +14,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.
 
+`GET /api/v1/patch-proposals/{id}/package` возвращает ZIP-пакет в памяти с `manifest.json`, `proposal.diff` и README-инструкцией. Manifest содержит `applyAllowed: false`; сервер не сохраняет ZIP на диск и не выполняет изменения.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;

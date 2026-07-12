@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +16,7 @@ from app.services.patch_proposals import PatchProposalError, build_patch_snapsho
 from app.services.patch_impact import analyze_patch_impact
 from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
+from app.services.patch_package import build_patch_package
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -218,3 +220,18 @@ def get_patch_events(proposal_id: str, db: Session = Depends(get_db)) -> dict[st
             for event in events
         ],
     }
+
+
+@router.get("/{proposal_id}/package")
+def download_patch_package(proposal_id: str, db: Session = Depends(get_db)) -> Response:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    package = build_patch_package(proposal)
+    record_patch_event(db, proposal.id, "package_exported", "system", {"applyAllowed": False})
+    db.commit()
+    return Response(
+        content=package,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{proposal.id}.zip"'},
+    )

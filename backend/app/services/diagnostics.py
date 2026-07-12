@@ -23,6 +23,15 @@ def build_diagnostics(settings: Settings, snapshot: PolicySnapshot) -> dict[str,
             "endpointConfigured": bool(str(settings.model_api_url).strip()),
             "apiKeyConfigured": _configured_secret(settings.model_api_key),
         },
+        "auth": {
+            "mode": settings.inspector_auth_mode,
+            "jwksConfigured": bool(settings.auth_jwks_url),
+            "issuerConfigured": bool(settings.auth_issuer),
+            "audienceConfigured": bool(settings.auth_audience),
+            "packageSigningConfigured": bool(
+                settings.inspector_package_signing_secret or settings.inspector_auth_secret
+            ),
+        },
         "policy": {
             "policyId": snapshot.policy.policy_id,
             "version": snapshot.policy.version,

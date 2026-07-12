@@ -1,8 +1,8 @@
-# 1C AI Inspector v0.5
+# 1C AI Inspector v0.6
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
-Текущий этап v0.5 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
+Текущий этап v0.6 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
@@ -67,6 +67,8 @@ docker compose --env-file .env up --build
 ```
 
 Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. При ротации сначала укажите новый current secret, старый в `INSPECTOR_AUTH_SECRET_PREVIOUS` и Unix deadline в `INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL`; после deadline удалите previous secret. Для production задайте отдельный `INSPECTOR_PACKAGE_SIGNING_SECRET`, чтобы package-подпись не зависела от auth-контура. Выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
+
+В `jwks`-режиме backend не стартует без `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE` и отдельного `INSPECTOR_PACKAGE_SIGNING_SECRET`. Реальный endpoint ключей можно проверить командой `.\scripts\idp-jwks-acceptance.ps1`; скрипт принимает только RSA `RS256/RS384/RS512` keys и не печатает токены.
 
 После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 

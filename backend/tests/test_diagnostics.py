@@ -12,3 +12,5 @@ def test_diagnostics_do_not_expose_model_api_key() -> None:
         assert "test-key" not in str(body)
         assert body["mcp"]["policyTools"] == 8
         assert body["mcp"]["bridgeTokenConfigured"] in {True, False}
+        assert body["auth"]["mode"] == "signed"
+        assert body["auth"]["packageSigningConfigured"] in {True, False}

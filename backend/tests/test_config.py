@@ -28,3 +28,18 @@ def test_secret_rotation_rejects_reusing_current_secret() -> None:
             inspector_auth_secret_previous="c" * 32,
             inspector_auth_secret_previous_until=100,
         )
+
+
+def test_jwks_mode_requires_external_issuer_configuration() -> None:
+    with pytest.raises(ValidationError, match="AUTH_JWKS_URL"):
+        Settings(**_settings_kwargs(), inspector_auth_mode="jwks")
+
+    settings = Settings(
+        **_settings_kwargs(),
+        inspector_auth_mode="jwks",
+        auth_jwks_url="https://issuer.test/.well-known/jwks.json",
+        auth_issuer="https://issuer.test",
+        auth_audience="inspector",
+        inspector_package_signing_secret="s" * 32,
+    )
+    assert settings.inspector_auth_mode == "jwks"

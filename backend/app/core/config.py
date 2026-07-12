@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     auth_jwks_url: AnyHttpUrl | None = None
     auth_issuer: str | None = None
     auth_audience: str | None = None
-    auth_roles_claim: str = "roles"
-    auth_subject_claim: str = "sub"
+    auth_roles_claim: str = Field(default="roles", min_length=1, max_length=128)
+    auth_subject_claim: str = Field(default="sub", min_length=1, max_length=128)
     auth_jwks_cache_ttl_sec: int = Field(default=300, ge=30, le=86_400)
 
     @field_validator("app_environment")
@@ -64,6 +64,15 @@ class Settings(BaseSettings):
             raise ValueError("INSPECTOR_AUTH_SECRET_PREVIOUS is required with a rotation deadline")
         if self.inspector_auth_secret and self.inspector_auth_secret == self.inspector_auth_secret_previous:
             raise ValueError("INSPECTOR_AUTH_SECRET and previous secret must differ")
+        if self.inspector_auth_mode == "jwks":
+            if not self.auth_jwks_url:
+                raise ValueError("AUTH_JWKS_URL is required in jwks mode")
+            if not self.auth_issuer:
+                raise ValueError("AUTH_ISSUER is required in jwks mode")
+            if not self.auth_audience:
+                raise ValueError("AUTH_AUDIENCE is required in jwks mode")
+            if not self.inspector_package_signing_secret:
+                raise ValueError("INSPECTOR_PACKAGE_SIGNING_SECRET is required in jwks mode")
         return self
 
 

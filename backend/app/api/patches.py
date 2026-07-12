@@ -306,7 +306,7 @@ def approve_patch_proposal(
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    proposal = db.get(PatchProposal, proposal_id)
+    proposal = _locked_proposal(db, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     if proposal.source_validation_status != "valid" or proposal.validation_status != "valid":
@@ -360,7 +360,7 @@ def reject_patch_proposal(
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    proposal = db.get(PatchProposal, proposal_id)
+    proposal = _locked_proposal(db, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     try:
@@ -471,7 +471,7 @@ def download_patch_package(
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> Response:
-    proposal = db.get(PatchProposal, proposal_id)
+    proposal = _locked_proposal(db, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     package_record = _find_package_version(db, proposal_id, version)
@@ -546,6 +546,15 @@ def _find_package_version(db: Session, proposal_id: str, version: int | None) ->
     else:
         statement = statement.order_by(PatchPackageVersion.version.desc())
     return db.scalars(statement).first()
+
+
+def _locked_proposal(db: Session, proposal_id: str) -> PatchProposal | None:
+    """Serialize approval and package creation against the proposal row."""
+    return db.scalar(
+        select(PatchProposal)
+        .where(PatchProposal.id == proposal_id)
+        .with_for_update()
+    )
 
 
 def _package_signing_secret(request: Request) -> str:

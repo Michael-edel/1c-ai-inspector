@@ -20,6 +20,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/revalidate` принимает текущий read-only snapshot и revision, сравнивает SHA-256 с исходным proposal и сохраняет `valid` или `stale`. Checkpoint разрешен только после `valid`; изменившийся или неполный source snapshot блокирует checkpoint.
 
+Approval transitions and first package-version creation lock the proposal row with PostgreSQL `FOR UPDATE`, so concurrent decisions cannot both commit a final state or duplicate version `1`.
+
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 
 Approve, reject и package download требуют Bearer token. В локальном режиме `INSPECTOR_AUTH_MODE=signed` Inspector проверяет HMAC-подпись из `INSPECTOR_AUTH_SECRET`; в production режиме `INSPECTOR_AUTH_MODE=jwks` он загружает RSA-ключи из `AUTH_JWKS_URL` и проверяет `AUTH_ISSUER`, `AUTH_AUDIENCE`, expiry, subject и роли. Subject и role берутся из проверенного токена, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.

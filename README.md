@@ -1,6 +1,8 @@
-# 1C AI Inspector v0.1
+# 1C AI Inspector v0.2
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
+
+Текущий этап v0.2 добавляет proposal-only Patch Planner: система готовит изменения и diff, но не применяет их к 1С, workspace или Git.
 
 Первый срез реализует технический фундамент:
 

@@ -22,4 +22,5 @@ def test_model_tables_are_registered() -> None:
         "model_usage",
         "normalized_tools",
         "prompt_execution_snapshots",
+        "patch_proposals",
     }.issubset(Base.metadata.tables)

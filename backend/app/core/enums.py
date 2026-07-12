@@ -38,3 +38,12 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class PatchStatus(StrEnum):
+    DRAFT = "draft"
+    PROPOSED = "proposed"
+    CHECKPOINTED = "checkpointed"
+    AWAITING_APPROVAL = "awaiting_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"

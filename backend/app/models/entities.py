@@ -144,3 +144,22 @@ class PromptExecutionSnapshot(TimestampMixin, Base):
     policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
     policy_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
     toolset_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class PatchProposal(TimestampMixin, Base):
+    __tablename__ = "patch_proposals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    target_environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_revision: Mapped[str | None] = mapped_column(String(128))
+    diff_text: Mapped[str | None] = mapped_column(Text)
+    files_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    impact_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    checkpoint_ref: Mapped[str | None] = mapped_column(String(255))
+    approval_note: Mapped[str | None] = mapped_column(Text)
+    approved_by: Mapped[str | None] = mapped_column(String(128))

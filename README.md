@@ -1,8 +1,8 @@
-# 1C AI Inspector v0.3
+# 1C AI Inspector v0.4
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
-Текущий этап v0.3 развивает proposal-only Patch Planner: система готовит изменения, проверяет source snapshot, impact evidence и validation gates, но не применяет их к 1С, workspace или Git.
+Текущий этап v0.4 развивает proposal-only Patch Planner: система использует signed auth/RBAC, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
@@ -105,6 +105,14 @@ Live acceptance после настройки `.env` запускается ко
 
 Скрипт проверяет read-only impact evidence, source revalidation, validation-gates, checkpoint, role policy, ZIP package и полный audit log. Весь контур остается proposal-only.
 
+Финальную приемку v0.4 запускайте при работающем Compose с двумя signed tokens:
+
+```powershell
+.\scripts\v04-acceptance.ps1 -AuthToken <maintainer-token> -OwnerToken <owner-token>
+```
+
+Скрипт проверяет signed auth, автоматический MCP evidence, policy для candidate risk, signed package и server-side verify. Токены и секреты не печатаются.
+
 Тесты без Docker:
 
 ```powershell
@@ -125,7 +133,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
-Patch Planner в v0.3 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, затем можно построить candidate impact и логический checkpoint. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
+Patch Planner в v0.4 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, read-only impact evidence и validation gates, затем можно создать signed package и пройти approval policy. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
 
 Текущий signed-token слой заменяет self-claimed role, но не является SSO/IdP: перед production нужно подключить внешний issuer или корпоративный gateway, который будет выпускать эти claims.
 

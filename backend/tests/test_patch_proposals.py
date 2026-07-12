@@ -8,6 +8,7 @@ from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
+from app.services.patch_validation import validate_patch_proposal
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -101,3 +102,45 @@ def test_source_revalidation_rejects_changed_content_and_revision() -> None:
 
     assert result["valid"] is False
     assert {item["type"] for item in result["mismatches"]} == {"revision_mismatch", "content_mismatch"}
+
+
+def test_patch_validation_accepts_valid_source_and_bsl_diff() -> None:
+    result = validate_patch_proposal(
+        [
+            {
+                "path": "CommonModules/Orders.bsl",
+                "originalSha256": "a",
+                "proposedSha256": "b",
+                "addedLines": 1,
+                "removedLines": 0,
+            }
+        ],
+        "--- a/CommonModules/Orders.bsl\n+++ b/CommonModules/Orders.bsl\n",
+        "valid",
+    )
+
+    assert result["valid"] is True
+    assert result["issues"] == []
+
+
+def test_patch_validation_reports_source_and_file_gate_failures() -> None:
+    result = validate_patch_proposal(
+        [
+            {
+                "path": "unsafe.exe",
+                "originalSha256": "a",
+                "proposedSha256": "b",
+                "addedLines": 0,
+                "removedLines": 0,
+            }
+        ],
+        "--- a/unsafe.exe\n+++ b/unsafe.exe\n",
+        "stale",
+    )
+
+    assert result["valid"] is False
+    assert {issue["code"] for issue in result["issues"]} == {
+        "SOURCE_NOT_VALIDATED",
+        "PATCH_FILE_TYPE_UNSUPPORTED",
+        "PATCH_DIFF_COUNTS_EMPTY",
+    }

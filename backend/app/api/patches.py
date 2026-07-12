@@ -19,6 +19,7 @@ from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
+from app.services.patch_validation import validate_patch_proposal
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -163,6 +164,30 @@ def revalidate_patch_source(
     return {"proposalId": proposal.id, "status": proposal.source_validation_status, "validation": result}
 
 
+@router.post("/{proposal_id}/validate")
+def validate_patch(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    result = validate_patch_proposal(
+        json.loads(proposal.files_json),
+        proposal.diff_text,
+        proposal.source_validation_status,
+    )
+    proposal.validation_status = "valid" if result["valid"] else "invalid"
+    proposal.validation_json = json.dumps(result, ensure_ascii=False)
+    proposal.validated_at = datetime.now(timezone.utc)
+    record_patch_event(
+        db,
+        proposal.id,
+        "validated" if result["valid"] else "validation_failed",
+        "system",
+        result,
+    )
+    db.commit()
+    return {"proposalId": proposal.id, "status": proposal.validation_status, "validation": result}
+
+
 @router.post("/{proposal_id}/checkpoint")
 def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
@@ -203,6 +228,8 @@ def approve_patch_proposal(
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
+    if proposal.source_validation_status != "valid" or proposal.validation_status != "valid":
+        raise HTTPException(status_code=409, detail="PATCH_NOT_VALIDATED")
     try:
         proposal.status = approve_status(proposal.status)
     except PatchWorkflowError as exc:
@@ -264,6 +291,10 @@ def _proposal_response(proposal: PatchProposal) -> dict[str, object]:
         "checkpointRef": proposal.checkpoint_ref,
         "approvedBy": proposal.approved_by,
         "approvalNote": proposal.approval_note,
+        "sourceValidationStatus": proposal.source_validation_status,
+        "sourceValidation": json.loads(proposal.source_validation_json),
+        "validationStatus": proposal.validation_status,
+        "validation": json.loads(proposal.validation_json),
     }
 
 

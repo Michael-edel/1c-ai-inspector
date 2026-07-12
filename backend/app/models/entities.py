@@ -166,6 +166,9 @@ class PatchProposal(TimestampMixin, Base):
     source_validation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unverified")
     source_validation_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     source_validated_at: Mapped[datetime | None] = mapped_column()
+    validation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unvalidated")
+    validation_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    validated_at: Mapped[datetime | None] = mapped_column()
 
 
 class PatchEvent(TimestampMixin, Base):

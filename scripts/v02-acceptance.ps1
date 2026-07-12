@@ -57,6 +57,9 @@ $validation = Post-Api "/api/v1/patch-proposals/$($proposal.id)/revalidate" @{
 }
 if ($validation.status -ne "valid") { throw "Source snapshot was not validated" }
 
+$patchValidation = Post-Api "/api/v1/patch-proposals/$($proposal.id)/validate"
+if ($patchValidation.status -ne "valid") { throw "Patch validation gate did not pass" }
+
 $checkpoint = Post-Api "/api/v1/patch-proposals/$($proposal.id)/checkpoint"
 if ($checkpoint.status -ne "checkpointed" -or $checkpoint.applied -ne $false -or -not $checkpoint.checkpointRef) {
     throw "Logical checkpoint is invalid"

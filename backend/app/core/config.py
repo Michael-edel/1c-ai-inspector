@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     mcp_transport: Literal["streamable-http", "bridge"] = "streamable-http"
     mcp_bridge_token: str | None = None
     mcp_projects_tool: str | None = None
+    mcp_patch_search_tool: str = "search_code"
+    mcp_patch_search_argument: str = "query"
     model_provider: str = "openai"
     model_name: str = "gpt-5.5"
     model_api_key: str = Field(min_length=1)

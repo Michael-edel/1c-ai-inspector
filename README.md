@@ -8,6 +8,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/impact` строит candidate impact analysis по измененным путям 1С. В body можно передать только evidence от read-only `search_code` или `get_object_structure`; совпавшие объекты получают `risk: evidenced`, остальные остаются candidate.
 
+`POST /api/v1/patch-proposals/{id}/impact/mcp` автоматически вызывает настроенный policy-published `MCP_PATCH_SEARCH_TOOL` через существующий bridge/Streamable HTTP connector. Вызов допускается только для категории `code.search`; результат ограничивается 20 evidence на объект и записывается в proposal audit.
+
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 
 `POST /api/v1/patch-proposals/{id}/approve` принимает `actor`, `role` и `note` только для checkpointed proposal; роль `maintainer` или `owner` обязательна. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal; доступна роль `reviewer`, `maintainer` или `owner`. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.

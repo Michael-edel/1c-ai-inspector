@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +28,8 @@ from app.services.patch_workflow import (
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
+from app.services.patch_mcp_evidence import extract_search_evidence
+from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.services.auth import AuthContext
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
@@ -140,6 +143,73 @@ def analyze_proposal_impact(
     record_patch_event(db, proposal.id, "impact_analyzed", "system", {"candidateCount": len(impacts)})
     db.commit()
     return {"proposalId": proposal.id, "status": "analyzed", "impact": impacts}
+
+
+@router.post("/{proposal_id}/impact/mcp")
+async def analyze_mcp_impact(
+    proposal_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    settings = request.app.state.settings
+    tool_name = settings.mcp_patch_search_tool
+    contract = request.app.state.policy_snapshot.published_tools.get(tool_name)
+    if contract is None or contract.category != "code.search":
+        raise HTTPException(status_code=503, detail="MCP search tool is not published as read-only")
+    candidates = analyze_patch_impact(json.loads(proposal.files_json))
+    connector = McpConnector(
+        str(settings.mcp_server_url),
+        request.app.state.policy_snapshot,
+        transport_mode=settings.mcp_transport,
+        access_token=settings.mcp_bridge_token,
+    )
+    evidence: list[dict[str, object]] = []
+    try:
+        for candidate in candidates:
+            result = await connector.call_tool(
+                tool_name,
+                {settings.mcp_patch_search_argument: candidate["objectFqn"]},
+            )
+            matches = extract_search_evidence(result)
+            record_patch_event(
+                db,
+                proposal.id,
+                "mcp_search_completed",
+                "system",
+                {
+                    "tool": tool_name,
+                    "objectFqn": candidate["objectFqn"],
+                    "evidenceCount": len(matches),
+                },
+            )
+            if matches:
+                evidence.append(
+                    {
+                        "objectFqn": candidate["objectFqn"],
+                        "relation": candidate["relation"],
+                        "sourceTool": tool_name,
+                        "evidence": matches,
+                    }
+                )
+    except (httpx.HTTPError, RuntimeError, ToolNotAllowedError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=503, detail="MCP read-only impact search is unavailable") from exc
+    finally:
+        await connector.close()
+    impacts = enrich_patch_impact(candidates, evidence)
+    proposal.impact_json = json.dumps(impacts, ensure_ascii=False)
+    record_patch_event(
+        db,
+        proposal.id,
+        "impact_mcp_analyzed",
+        "system",
+        {"tool": tool_name, "candidateCount": len(candidates), "evidencedCount": len(evidence)},
+    )
+    db.commit()
+    return {"proposalId": proposal.id, "status": "analyzed_mcp", "tool": tool_name, "impact": impacts}
 
 
 @router.post("/{proposal_id}/revalidate")

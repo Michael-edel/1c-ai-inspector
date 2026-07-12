@@ -136,7 +136,7 @@ Live-проверка именно EDT MCP запускается так:
 
 Скрипт проверяет MCP initialize, discovery фактического `MCP_PATCH_SEARCH_TOOL`, режим `read-only`/категорию `code.search`, project sync и evidence через `impact/mcp`. Он создает только proposal-only данные.
 
-Production deployment использует override `docker-compose.production.yml`: PostgreSQL не публикуется наружу, backend/frontend доступны только на localhost для reverse proxy, а сервисы имеют `restart: unless-stopped`. Перед запуском выполните `.\scripts\production-preflight.ps1`, затем `docker compose --env-file .env -f docker-compose.yml -f docker-compose.production.yml up --build -d`.
+Production deployment использует override `docker-compose.production.yml`: PostgreSQL не публикуется наружу, backend/frontend доступны только на localhost для reverse proxy, а сервисы имеют `restart: unless-stopped`. Для постоянного Keycloak добавьте `docker-compose.keycloak.production.yml`: он использует отдельные PostgreSQL/Keycloak volumes и `start`, а не `start-dev`. Перед запуском выполните `.\scripts\production-preflight.ps1 -WithKeycloak`, затем `docker compose --env-file .env -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.keycloak.production.yml up --build -d`.
 
 Резервная копия PostgreSQL: `.\scripts\backup.ps1 -OutputDirectory .\backups`. Скрипт создает custom-format dump, проверяет его через `pg_restore --list` и удаляет только dump-файлы старше `KeepDays`. Восстановление намеренно требует явного подтверждения: `.\scripts\restore.ps1 -BackupFile .\backups\<file>.dump -ConfirmRestore`.
 

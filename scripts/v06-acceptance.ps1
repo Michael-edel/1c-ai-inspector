@@ -12,9 +12,9 @@ try {
     }
     $mode = if ($envValues["INSPECTOR_AUTH_MODE"]) { $envValues["INSPECTOR_AUTH_MODE"] } else { "signed" }
     if ($Production) {
-        .\scripts\production-preflight.ps1 -EnvFile ".env"
+        .\scripts\production-preflight.ps1 -EnvFile ".env" -WithKeycloak
         .\scripts\idp-jwks-acceptance.ps1
-        docker compose --env-file .env -f docker-compose.yml -f docker-compose.production.yml config --quiet
+        docker compose --env-file .env -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.keycloak.production.yml config --quiet
     } elseif ($mode -eq "jwks") {
         .\scripts\idp-jwks-acceptance.ps1
     } else {

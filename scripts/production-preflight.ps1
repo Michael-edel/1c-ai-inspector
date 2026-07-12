@@ -1,4 +1,4 @@
-param([string]$EnvFile = ".env")
+param([string]$EnvFile = ".env", [switch]$WithKeycloak)
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
@@ -16,10 +16,23 @@ try {
     if ($values["INSPECTOR_AUTH_MODE"] -ne "jwks") { throw "INSPECTOR_AUTH_MODE must be jwks for production" }
     if ($values["INSPECTOR_PACKAGE_SIGNING_SECRET"].Length -lt 32) { throw "INSPECTOR_PACKAGE_SIGNING_SECRET must be at least 32 characters" }
 
-    $config = & docker compose --env-file $resolvedEnv -f docker-compose.yml -f docker-compose.production.yml config 2>&1 | Out-String
+    $composeFiles = @("-f", "docker-compose.yml", "-f", "docker-compose.production.yml")
+    if ($WithKeycloak) {
+        foreach ($key in @("KEYCLOAK_PUBLIC_URL", "KEYCLOAK_DB_NAME", "KEYCLOAK_DB_USER", "KEYCLOAK_DB_PASSWORD", "KEYCLOAK_ADMIN_USERNAME", "KEYCLOAK_ADMIN_PASSWORD")) {
+            if (-not $values[$key] -or $values[$key] -like "replace-with-*") { throw "Not configured in production env: $key" }
+        }
+        if ($values["KEYCLOAK_PUBLIC_URL"] -notlike "https://*") { throw "KEYCLOAK_PUBLIC_URL must use https" }
+        if ($values["KEYCLOAK_DB_PASSWORD"].Length -lt 24 -or $values["KEYCLOAK_ADMIN_PASSWORD"].Length -lt 24) {
+            throw "Keycloak DB and admin passwords must be at least 24 characters"
+        }
+        $composeFiles += @("-f", "docker-compose.keycloak.production.yml")
+    }
+
+    $config = & docker compose --env-file $resolvedEnv @composeFiles config 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) { throw "Production Compose config failed" }
-    if ($config -match "5432:5432") { throw "PostgreSQL must not be published in production Compose" }
-    Write-Output "Production preflight passed: JWKS auth, package signing secret, Compose override and closed PostgreSQL port verified."
+    if ($config -match "published: 5432") { throw "PostgreSQL must not be published in production Compose" }
+    $scope = if ($WithKeycloak) { "application and persistent Keycloak" } else { "application" }
+    Write-Output "Production preflight passed: $scope secrets, Compose override and closed PostgreSQL port verified."
 } finally {
     Pop-Location
 }

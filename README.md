@@ -22,6 +22,8 @@ Read-only web-приложение для анализа кода 1С через
 
 Approval transitions and first package-version creation lock the proposal row with PostgreSQL `FOR UPDATE`, so concurrent decisions cannot both commit a final state or duplicate version `1`.
 
+Каждый HTTP-запрос получает `X-Request-ID`; JSON logs содержат только method, path, status, duration и request id, без Authorization, body и query parameters. Aggregate metrics доступны через `GET /api/v1/system/metrics` с Bearer token.
+
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 
 Approve, reject и package download требуют Bearer token. В локальном режиме `INSPECTOR_AUTH_MODE=signed` Inspector проверяет HMAC-подпись из `INSPECTOR_AUTH_SECRET`; в production режиме `INSPECTOR_AUTH_MODE=jwks` он загружает RSA-ключи из `AUTH_JWKS_URL` и проверяет `AUTH_ISSUER`, `AUTH_AUDIENCE`, expiry, subject и роли. Subject и role берутся из проверенного токена, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.
@@ -46,6 +48,7 @@ Approval policy учитывает environment и impact risk: `sandbox` с по
 - `/api/v1/system/mcp/health` для безопасной проверки MCP `initialize`.
 - `/api/v1/system/capabilities` для проверки покрытия capabilities всеми агентами.
 - `/api/v1/system/diagnostics` для проверки конфигурации MCP, policy и Model API без раскрытия секретов.
+- `/api/v1/system/metrics` для авторизованных aggregate-метрик proposal/task/tool-call/package без идентификаторов proposal и секретов.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/tasks/{task_id}` для статуса, attempt и result readiness.
 - `GET /api/v1/agents` с тремя агентами v0.1.

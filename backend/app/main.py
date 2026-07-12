@@ -1,4 +1,7 @@
 from contextlib import asynccontextmanager
+import logging
+from time import perf_counter
+from uuid import uuid4
 
 from fastapi import FastAPI
 
@@ -29,11 +32,47 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="1C AI Inspector", version="0.1.0", lifespan=lifespan)
 configure_logging()
+request_logger = logging.getLogger("app.http")
 app.include_router(system_router)
 app.include_router(projects_router)
 app.include_router(patches_router)
 app.include_router(tasks_router)
 app.include_router(agents_router)
+
+
+@app.middleware("http")
+async def request_observability(request, call_next):
+    request_id = uuid4().hex
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        request_logger.exception(
+            "http_request_failed",
+            extra={
+                "fields": {
+                    "requestId": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "durationMs": round((perf_counter() - started) * 1000, 2),
+                }
+            },
+        )
+        raise
+    response.headers["X-Request-ID"] = request_id
+    request_logger.info(
+        "http_request",
+        extra={
+            "fields": {
+                "requestId": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "durationMs": round((perf_counter() - started) * 1000, 2),
+            }
+        },
+    )
+    return response
 
 
 @app.get("/health")

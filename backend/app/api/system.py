@@ -1,18 +1,52 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 import httpx
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.mcp.connector import McpConnector
 from app.mcp.policy import PolicyError
 from app.db.session import get_db
+from app.models import PatchEvent, PatchPackageVersion, PatchProposal, Task, ToolCall
+from app.api.dependencies import require_identity
+from app.services.auth import AuthContext
 from app.services.mcp_discovery import McpDiscoveryService
 from app.services.capabilities import evaluate_capabilities
 from app.services.diagnostics import build_diagnostics
 from app.services.readiness import ReadinessGate
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+
+@router.get("/metrics")
+def metrics(
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    try:
+        proposal_statuses = db.execute(
+            select(PatchProposal.status, func.count()).group_by(PatchProposal.status)
+        ).all()
+        task_statuses = db.execute(select(Task.status, func.count()).group_by(Task.status)).all()
+        tool_call_statuses = db.execute(
+            select(ToolCall.status, func.count()).group_by(ToolCall.status)
+        ).all()
+        event_types = db.execute(select(PatchEvent.event_type, func.count()).group_by(PatchEvent.event_type)).all()
+        package_versions = db.scalar(select(func.count()).select_from(PatchPackageVersion)) or 0
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="METRICS_UNAVAILABLE") from exc
+    return {
+        "status": "ok",
+        "proposals": {"byStatus": _counts(proposal_statuses)},
+        "tasks": {"byStatus": _counts(task_statuses)},
+        "toolCalls": {"byStatus": _counts(tool_call_statuses)},
+        "patchEvents": {"byType": _counts(event_types)},
+        "packageVersions": package_versions,
+    }
+
+
+def _counts(rows: list[tuple[object, int]]) -> dict[str, int]:
+    return {str(key): int(value) for key, value in rows}
 
 
 @router.get("/policy")

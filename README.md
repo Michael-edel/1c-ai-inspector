@@ -8,6 +8,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/impact` строит candidate impact analysis по измененным путям 1С и сохраняет связи с объектами; это предварительный анализ, а не утверждение фактической зависимости.
 
+`POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;
@@ -88,6 +90,8 @@ MCP discovery получает `tools/list`, принимает только и�
 Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сначала сохраняется строка task, затем связанный execution snapshot и событие создания; задача получает `queued`, worker атомарно переводит её в `running`, после чего разрешены только `completed`, `failed` или `cancelled`. Сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
+
+Patch Planner в v0.2 работает в proposal-only режиме: после создания diff можно построить candidate impact и логический checkpoint, но ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.

@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models import PatchProposal, Project, Task
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
 from app.services.patch_impact import analyze_patch_impact
+from app.services.patch_checkpoint import create_checkpoint_ref
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -82,6 +83,28 @@ def analyze_proposal_impact(proposal_id: str, db: Session = Depends(get_db)) -> 
     proposal.impact_json = json.dumps(impacts, ensure_ascii=False)
     db.commit()
     return {"proposalId": proposal.id, "status": "analyzed", "impact": impacts}
+
+
+@router.post("/{proposal_id}/checkpoint")
+def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    if proposal.status not in {PatchStatus.PROPOSED.value, PatchStatus.CHECKPOINTED.value}:
+        raise HTTPException(status_code=409, detail="Patch proposal is not checkpointable")
+    proposal.checkpoint_ref = create_checkpoint_ref(
+        proposal.id,
+        proposal.source_revision,
+        proposal.diff_text,
+    )
+    proposal.status = PatchStatus.CHECKPOINTED.value
+    db.commit()
+    return {
+        "proposalId": proposal.id,
+        "status": proposal.status,
+        "checkpointRef": proposal.checkpoint_ref,
+        "applied": False,
+    }
 
 
 def _proposal_response(proposal: PatchProposal) -> dict[str, object]:

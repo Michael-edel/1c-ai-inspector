@@ -1,6 +1,7 @@
 import pytest
 
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot
+from app.services.patch_checkpoint import create_checkpoint_ref
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -23,3 +24,13 @@ def test_patch_snapshot_rejects_paths_outside_workspace(path: str) -> None:
 def test_patch_snapshot_rejects_noop() -> None:
     with pytest.raises(PatchProposalError, match="PATCH_NO_CHANGES"):
         build_patch_snapshot([{"path": "module.bsl", "original": "A", "proposed": "A"}])
+
+
+def test_checkpoint_ref_is_deterministic_and_content_bound() -> None:
+    first = create_checkpoint_ref("pp_123", "rev-1", "diff-1")
+    second = create_checkpoint_ref("pp_123", "rev-1", "diff-1")
+    changed = create_checkpoint_ref("pp_123", "rev-1", "diff-2")
+
+    assert first == second
+    assert first.startswith("proposal-checkpoint:pp_123:")
+    assert first != changed

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     inspector_auth_secret: str | None = Field(default=None, min_length=32)
     inspector_auth_secret_previous: str | None = Field(default=None, min_length=32)
     inspector_auth_secret_previous_until: int | None = Field(default=None, ge=0)
+    inspector_package_signing_secret: str | None = Field(default=None, min_length=32)
     inspector_auth_mode: Literal["signed", "jwks"] = "signed"
     auth_jwks_url: AnyHttpUrl | None = None
     auth_issuer: str | None = None

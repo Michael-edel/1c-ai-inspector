@@ -1,10 +1,11 @@
+import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.enums import PatchStatus
 from app.api.dependencies import require_identity
 from app.db.session import get_db
-from app.models import PatchEvent, PatchProposal, Project, Task
+from app.models import PatchEvent, PatchPackageVersion, PatchProposal, Project, Task
 from app.services.patch_audit import record_patch_event
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
 from app.services.patch_impact import analyze_patch_impact, enrich_patch_impact
@@ -435,23 +436,84 @@ def get_patch_events(proposal_id: str, db: Session = Depends(get_db)) -> dict[st
     }
 
 
+@router.get("/{proposal_id}/package/versions")
+def list_patch_package_versions(
+    proposal_id: str,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(PatchProposal, proposal_id) is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    versions = db.scalars(
+        select(PatchPackageVersion)
+        .where(PatchPackageVersion.proposal_id == proposal_id)
+        .order_by(PatchPackageVersion.version.desc())
+    ).all()
+    return {
+        "proposalId": proposal_id,
+        "versions": [
+            {
+                "version": item.version,
+                "sha256": item.package_sha256,
+                "createdBy": item.created_by,
+                "createdAt": item.created_at.isoformat(),
+            }
+            for item in versions
+        ],
+    }
+
+
 @router.get("/{proposal_id}/package")
 def download_patch_package(
     proposal_id: str,
     request: Request,
+    version: int | None = Query(default=None, ge=1),
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> Response:
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
-    package = build_patch_package(proposal, request.app.state.settings.inspector_auth_secret)
-    record_patch_event(db, proposal.id, "package_exported", identity.subject, {"applyAllowed": False})
+    package_record = _find_package_version(db, proposal_id, version)
+    if package_record is None:
+        if version is not None:
+            raise HTTPException(status_code=404, detail="Patch package version not found")
+        package = build_patch_package(proposal, _package_signing_secret(request))
+        package_record = PatchPackageVersion(
+            id=f"pkg_{uuid4().hex}",
+            proposal_id=proposal.id,
+            version=1,
+            package_bytes=package,
+            package_sha256=hashlib.sha256(package).hexdigest(),
+            created_by=identity.subject,
+        )
+        db.add(package_record)
+        db.flush()
+        record_patch_event(
+            db,
+            proposal.id,
+            "package_stored",
+            identity.subject,
+            {"version": package_record.version, "sha256": package_record.package_sha256, "applyAllowed": False},
+        )
+    else:
+        package = package_record.package_bytes
+    record_patch_event(
+        db,
+        proposal.id,
+        "package_exported",
+        identity.subject,
+        {"version": package_record.version, "applyAllowed": False},
+    )
     db.commit()
     return Response(
         content=package,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{proposal.id}.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{proposal.id}-v{package_record.version}.zip"',
+            "X-Package-Version": str(package_record.version),
+            "X-Package-Sha256": package_record.package_sha256,
+        },
     )
 
 
@@ -469,9 +531,26 @@ async def verify_downloaded_package(
         raise HTTPException(status_code=413, detail="Package is too large")
     result = verify_patch_package(
         package,
-        request.app.state.settings.inspector_auth_secret,
+        _package_signing_secret(request),
         expected_proposal_id=proposal_id,
     )
     if not result["valid"]:
         raise HTTPException(status_code=422, detail=result["reason"])
     return result
+
+
+def _find_package_version(db: Session, proposal_id: str, version: int | None) -> PatchPackageVersion | None:
+    statement = select(PatchPackageVersion).where(PatchPackageVersion.proposal_id == proposal_id)
+    if version is not None:
+        statement = statement.where(PatchPackageVersion.version == version)
+    else:
+        statement = statement.order_by(PatchPackageVersion.version.desc())
+    return db.scalars(statement).first()
+
+
+def _package_signing_secret(request: Request) -> str:
+    settings = request.app.state.settings
+    secret = settings.inspector_package_signing_secret or settings.inspector_auth_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="PACKAGE_SIGNING_NOT_CONFIGURED")
+    return secret

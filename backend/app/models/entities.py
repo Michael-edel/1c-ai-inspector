@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -180,3 +180,15 @@ class PatchEvent(TimestampMixin, Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
+class PatchPackageVersion(TimestampMixin, Base):
+    __tablename__ = "patch_package_versions"
+    __table_args__ = (UniqueConstraint("proposal_id", "version", name="uq_patch_package_proposal_version"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(ForeignKey("patch_proposals.id"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    package_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)

@@ -16,7 +16,7 @@ Read-only web-приложение для анализа кода 1С через
 
 `GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.
 
-`GET /api/v1/patch-proposals/{id}/package` возвращает подписанный ZIP-пакет в памяти с `manifest.json`, `proposal.diff`, `signature.json` и README-инструкцией. Manifest содержит `applyAllowed: false` и SHA-256 diff; `POST /api/v1/patch-proposals/{id}/package/verify` проверяет подпись и целостность загруженного package. Сервер не сохраняет ZIP на диск и не выполняет изменения.
+`GET /api/v1/patch-proposals/{id}/package` возвращает последнюю immutable-версию подписанного ZIP-пакета с `manifest.json`, `proposal.diff`, `signature.json` и README-инструкцией. Первая выдача сохраняет пакет в PostgreSQL с SHA-256 и actor; `GET /api/v1/patch-proposals/{id}/package?version=N` получает конкретную версию, а `/package/versions` возвращает metadata без ZIP. Manifest содержит `applyAllowed: false`; `POST /api/v1/patch-proposals/{id}/package/verify` проверяет подпись и целостность загруженного package. Сервер не сохраняет ZIP на диск и не выполняет изменения.
 
 `POST /api/v1/patch-proposals/{id}/revalidate` принимает текущий read-only snapshot и revision, сравнивает SHA-256 с исходным proposal и сохраняет `valid` или `stale`. Checkpoint разрешен только после `valid`; изменившийся или неполный source snapshot блокирует checkpoint.
 
@@ -61,7 +61,7 @@ notepad .env
 docker compose --env-file .env up --build
 ```
 
-Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. При ротации сначала укажите новый current secret, старый в `INSPECTOR_AUTH_SECRET_PREVIOUS` и Unix deadline в `INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL`; после deadline удалите previous secret. Для production выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
+Для локального signed-режима задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. При ротации сначала укажите новый current secret, старый в `INSPECTOR_AUTH_SECRET_PREVIOUS` и Unix deadline в `INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL`; после deadline удалите previous secret. Для production задайте отдельный `INSPECTOR_PACKAGE_SIGNING_SECRET`, чтобы package-подпись не зависела от auth-контура. Выберите `INSPECTOR_AUTH_MODE=jwks` и задайте `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE`; ключи issuer кэшируются на `AUTH_JWKS_CACHE_TTL_SEC` секунд и обновляются при смене `kid`. Inspector не выпускает внешние токены и не хранит их.
 
 После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 

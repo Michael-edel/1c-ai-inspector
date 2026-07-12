@@ -2,6 +2,23 @@ param([switch]$KeepRunning)
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
+
+function Test-DockerEngine([int]$TimeoutMs) {
+    $stdout = Join-Path $env:TEMP "one-c-ai-inspector-docker-$PID.out"
+    $stderr = Join-Path $env:TEMP "one-c-ai-inspector-docker-$PID.err"
+    $process = Start-Process -FilePath "docker" -ArgumentList "info" -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    try {
+        if (-not $process.WaitForExit($TimeoutMs)) {
+            $process.Kill()
+            throw "Docker command timed out after ${TimeoutMs}ms"
+        }
+        if ($process.ExitCode -ne 0) {
+            throw ((Get-Content -LiteralPath $stderr -Raw).Trim())
+        }
+    } finally {
+        Remove-Item -LiteralPath $stdout, $stderr -Force -ErrorAction SilentlyContinue
+    }
+}
 $envPath = Join-Path $repo ".env"
 
 if (-not (Test-Path -LiteralPath $envPath)) {
@@ -25,10 +42,8 @@ if ($missing.Count -gt 0) {
     throw "Not configured in .env: $($missing -join ', ')"
 }
 
-docker info | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker Engine is unavailable"
-}
+try { Test-DockerEngine 15000 }
+catch { throw "Docker Engine is unavailable or unresponsive: $($_.Exception.Message)" }
 
 Push-Location $repo
 try {

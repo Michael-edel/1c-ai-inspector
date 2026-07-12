@@ -4,11 +4,13 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import PatchStatus
 from app.db.session import get_db
-from app.models import PatchProposal, Project, Task
+from app.models import PatchEvent, PatchProposal, Project, Task
+from app.services.patch_audit import record_patch_event
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
 from app.services.patch_impact import analyze_patch_impact
 from app.services.patch_checkpoint import create_checkpoint_ref
@@ -68,6 +70,8 @@ def create_patch_proposal(
         impact_json="[]",
     )
     db.add(proposal)
+    db.flush()
+    record_patch_event(db, proposal.id, "created", "system", {"status": proposal.status})
     db.commit()
     return _proposal_response(proposal)
 
@@ -87,6 +91,7 @@ def analyze_proposal_impact(proposal_id: str, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     impacts = analyze_patch_impact(json.loads(proposal.files_json))
     proposal.impact_json = json.dumps(impacts, ensure_ascii=False)
+    record_patch_event(db, proposal.id, "impact_analyzed", "system", {"candidateCount": len(impacts)})
     db.commit()
     return {"proposalId": proposal.id, "status": "analyzed", "impact": impacts}
 
@@ -104,6 +109,13 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
         proposal.diff_text,
     )
     proposal.status = PatchStatus.CHECKPOINTED.value
+    record_patch_event(
+        db,
+        proposal.id,
+        "checkpointed",
+        "system",
+        {"checkpointRef": proposal.checkpoint_ref, "applied": False},
+    )
     db.commit()
     return {
         "proposalId": proposal.id,
@@ -128,6 +140,7 @@ def approve_patch_proposal(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     proposal.approved_by = payload.actor
     proposal.approval_note = payload.note
+    record_patch_event(db, proposal.id, "approved", payload.actor, {"note": payload.note, "applied": False})
     db.commit()
     return {
         "proposalId": proposal.id,
@@ -153,6 +166,7 @@ def reject_patch_proposal(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     proposal.approved_by = payload.actor
     proposal.approval_note = payload.note
+    record_patch_event(db, proposal.id, "rejected", payload.actor, {"note": payload.note, "applied": False})
     db.commit()
     return {
         "proposalId": proposal.id,
@@ -179,4 +193,28 @@ def _proposal_response(proposal: PatchProposal) -> dict[str, object]:
         "checkpointRef": proposal.checkpoint_ref,
         "approvedBy": proposal.approved_by,
         "approvalNote": proposal.approval_note,
+    }
+
+
+@router.get("/{proposal_id}/events")
+def get_patch_events(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    if db.get(PatchProposal, proposal_id) is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    events = db.scalars(
+        select(PatchEvent)
+        .where(PatchEvent.proposal_id == proposal_id)
+        .order_by(PatchEvent.created_at, PatchEvent.id)
+    ).all()
+    return {
+        "proposalId": proposal_id,
+        "events": [
+            {
+                "id": event.id,
+                "type": event.event_type,
+                "actor": event.actor,
+                "payload": json.loads(event.payload_json),
+                "createdAt": event.created_at.isoformat(),
+            }
+            for event in events
+        ],
     }

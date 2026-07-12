@@ -163,3 +163,13 @@ class PatchProposal(TimestampMixin, Base):
     checkpoint_ref: Mapped[str | None] = mapped_column(String(255))
     approval_note: Mapped[str | None] = mapped_column(Text)
     approved_by: Mapped[str | None] = mapped_column(String(128))
+
+
+class PatchEvent(TimestampMixin, Base):
+    __tablename__ = "patch_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proposal_id: Mapped[str] = mapped_column(ForeignKey("patch_proposals.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

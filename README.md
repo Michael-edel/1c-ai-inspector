@@ -12,6 +12,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/approve` принимает `actor` и `note` только для checkpointed proposal. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.
 
+`GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;

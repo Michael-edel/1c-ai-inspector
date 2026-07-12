@@ -8,6 +8,9 @@ type Agent = { code: string; name: string; prompt_version: string; task_kind: st
 type Audit = { task_id: string; status: string; events: { type: string }[]; model_usage: { model: string; estimatedCost: number }[] };
 type Project = { id: string; name: string; environment: string; availableCapabilities: string[] };
 type Report = { status: string; summary: string; findings: unknown[]; persistedFindings: unknown[] };
+type PatchImpact = { objectFqn: string; relation: string; risk: string; source: string };
+type PatchProposal = { id: string; status: string; title: string; summary: string; sourceRevision: string | null; diff: string; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null };
+type PatchEvent = { id: number; type: string; actor: string; payload: Record<string, unknown>; createdAt: string };
 
 const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(path, options);
@@ -29,6 +32,17 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState("");
   const [report, setReport] = useState<Report | null>(null);
+  const [patchPath, setPatchPath] = useState("CommonModules/Example.bsl");
+  const [patchTitle, setPatchTitle] = useState("Proposal-only change");
+  const [patchSummary, setPatchSummary] = useState("Review a proposed BSL change before any manual application.");
+  const [patchRevision, setPatchRevision] = useState("local-draft");
+  const [patchOriginal, setPatchOriginal] = useState("Procedure Check();\n\tReturn True;\nEndProcedure;");
+  const [patchProposed, setPatchProposed] = useState("Procedure Check();\n\t// review before apply\n\tReturn True;\nEndProcedure;");
+  const [patchActor, setPatchActor] = useState("reviewer");
+  const [patchNote, setPatchNote] = useState("Reviewed in Inspector proposal workflow.");
+  const [patchProposal, setPatchProposal] = useState<PatchProposal | null>(null);
+  const [patchEvents, setPatchEvents] = useState<PatchEvent[]>([]);
+  const [patchBusy, setPatchBusy] = useState(false);
 
   const refresh = async () => {
     try {
@@ -120,6 +134,61 @@ function App() {
     }
   };
 
+  const loadPatch = async (proposalId: string) => {
+    const [proposal, eventLog] = await Promise.all([
+      api<PatchProposal>(`/api/v1/patch-proposals/${proposalId}`),
+      api<{ events: PatchEvent[] }>(`/api/v1/patch-proposals/${proposalId}/events`),
+    ]);
+    setPatchProposal(proposal);
+    setPatchEvents(eventLog.events);
+  };
+
+  const createPatchProposal = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedProject || !patchPath.trim() || patchOriginal === patchProposed) return;
+    setPatchBusy(true);
+    setError("");
+    try {
+      const created = await api<PatchProposal>("/api/v1/patch-proposals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: selectedProject,
+          title: patchTitle.trim(),
+          summary: patchSummary.trim(),
+          sourceRevision: patchRevision.trim() || null,
+          files: [{ path: patchPath.trim(), original: patchOriginal, proposed: patchProposed }],
+        }),
+      });
+      await loadPatch(created.id);
+      setMessage("Proposal создан. Изменения остаются только в preview.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось создать proposal");
+    } finally {
+      setPatchBusy(false);
+    }
+  };
+
+  const runPatchAction = async (action: "impact" | "checkpoint" | "approve" | "reject") => {
+    if (!patchProposal) return;
+    setPatchBusy(true);
+    setError("");
+    try {
+      const options: RequestInit = { method: "POST" };
+      if (action === "approve" || action === "reject") {
+        options.headers = { "Content-Type": "application/json" };
+        options.body = JSON.stringify({ actor: patchActor.trim(), note: patchNote.trim() });
+      }
+      await api(`/api/v1/patch-proposals/${patchProposal.id}/${action}`, options);
+      await loadPatch(patchProposal.id);
+      setMessage(`Действие ${action} сохранено в журнале proposal.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Действие proposal недоступно");
+    } finally {
+      setPatchBusy(false);
+    }
+  };
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">1C</span><span>AI Inspector</span></div>
@@ -134,7 +203,8 @@ function App() {
       <section className="metrics-row"><div className="metric"><span>Policy</span><strong>{policy?.version ?? "—"}</strong><small>{policy?.policyId ?? "loading"}</small></div><div className="metric"><span>Capabilities</span><strong>{policy?.normalizedTools.length ?? 0}</strong><small>{readiness?.capabilitiesStatus ?? "—"}</small></div><div className="metric"><span>Discovered</span><strong>{policy?.discoveredTools.length ?? 0}</strong><small>from MCP server</small></div></section>
       <section className="work-grid"><div className="panel task-panel"><div className="panel-heading"><div><span className="panel-index">01</span><h3>Поставить задачу</h3></div><span className="lock">{canCreateTask ? "OPEN" : "LOCKED"}</span></div><form onSubmit={createTask}><label htmlFor="project">EDT project</label><select id="project" value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)} disabled={!canCreateTask || projects.length === 0}><option value="">Выберите проект</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.environment}</option>)}</select><label htmlFor="agent">Agent profile</label><select id="agent" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} disabled={!canCreateTask}>{agents.map((agent) => <option key={agent.code} value={agent.code}>{agent.name}</option>)}</select><label htmlFor="task">Запрос по коду 1С</label><textarea id="task" value={taskText} onChange={(event) => setTaskText(event.target.value)} placeholder="Например: проверь запросы в модуле документа ЗаказКлиента" disabled={!canCreateTask} /><button className="primary-button" disabled={!canCreateTask || !selectedProject || !taskText.trim()}>{canCreateTask ? "Создать read-only задачу" : "Ожидание MCP tools"}</button></form></div><div className="panel" id="policy"><div className="panel-heading"><div><span className="panel-index">02</span><h3>Policy snapshot</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void syncProjects()}>SYNC PROJECTS</button><button className="ghost-button compact" onClick={() => void discoverTools()} disabled={discovering}>{discovering ? "DISCOVERING" : "DISCOVER MCP"}</button></div></div><dl className="data-list"><div><dt>Projects</dt><dd>{projects.length}</dd></div><div><dt>Policy checksum</dt><dd>{readiness?.policyChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Toolset checksum</dt><dd>{policy?.toolsetChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Published tools</dt><dd className="safe">{policy?.publishedTools.length ?? 0} read-only</dd></div></dl></div></section>
       <section className="panel agents-panel" id="agents"><div className="panel-heading"><div><span className="panel-index">03</span><h3>Agent registry</h3></div><span className="panel-note">v0.1 / 3 profiles</span></div><div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={agent.code}><span className="agent-number">0{index + 1}</span><div><strong>{agent.name}</strong><small>{agent.task_kind} · prompt {agent.prompt_version}</small></div><span className="agent-state">STAGED</span></div>)}</div></section>
-      <section className="panel agents-panel"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Execution audit</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void loadAudit()} disabled={!taskId}>REFRESH AUDIT</button><button className="ghost-button compact" onClick={() => void loadReport()} disabled={!taskId}>LOAD REPORT</button></div></div>{taskId ? <dl className="data-list"><div><dt>Task</dt><dd>{taskId.slice(0, 18)}…</dd></div><div><dt>Status</dt><dd>{audit?.status ?? "queued"}</dd></div><div><dt>Events</dt><dd>{audit?.events.length ?? 0}</dd></div><div><dt>Model cost</dt><dd>{audit?.model_usage.reduce((sum, item) => sum + item.estimatedCost, 0).toFixed(4) ?? "0.0000"}</dd></div>{report && <><div><dt>Summary</dt><dd>{report.summary}</dd></div><div><dt>Findings</dt><dd>{report.persistedFindings.length}</dd></div></>}</dl> : <p className="empty-note">Создайте задачу после прохождения readiness gate.</p>}</section>
+      <section className="panel patch-panel" id="patch-planner"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Patch Planner</h3></div><span className="panel-note">PROPOSAL ONLY</span></div><p className="panel-intro">Сформируйте diff для проверки. Inspector не меняет файлы, Git или конфигурацию 1С.</p><form onSubmit={createPatchProposal} className="patch-form"><label htmlFor="patch-title">Название proposal</label><input id="patch-title" value={patchTitle} onChange={(event) => setPatchTitle(event.target.value)} /><label htmlFor="patch-path">Относительный путь BSL</label><input id="patch-path" value={patchPath} onChange={(event) => setPatchPath(event.target.value)} /><div className="patch-form-grid"><div><label htmlFor="patch-revision">Source revision</label><input id="patch-revision" value={patchRevision} onChange={(event) => setPatchRevision(event.target.value)} /></div><div><label htmlFor="patch-summary">Summary</label><input id="patch-summary" value={patchSummary} onChange={(event) => setPatchSummary(event.target.value)} /></div></div><label htmlFor="patch-original">Original</label><textarea id="patch-original" value={patchOriginal} onChange={(event) => setPatchOriginal(event.target.value)} /><label htmlFor="patch-proposed">Proposed</label><textarea id="patch-proposed" value={patchProposed} onChange={(event) => setPatchProposed(event.target.value)} /><div className="patch-actions"><button className="primary-button" disabled={patchBusy || !selectedProject || !patchPath.trim() || patchOriginal === patchProposed}>Сформировать proposal</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("impact")} disabled={patchBusy || !patchProposal}>ANALYZE IMPACT</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("checkpoint")} disabled={patchBusy || !patchProposal || !["proposed", "checkpointed"].includes(patchProposal.status)}>CHECKPOINT</button></div></form>{patchProposal && <div className="patch-result"><div className="patch-result-head"><div><strong>{patchProposal.title}</strong><small>{patchProposal.id} · revision {patchProposal.sourceRevision ?? "—"}</small></div><span className={`patch-status ${patchProposal.status}`}>{patchProposal.status}</span></div><pre className="diff-view">{patchProposal.diff}</pre><div className="patch-meta"><span>Impact: {patchProposal.impact.length} candidate(s)</span><span>Checkpoint: {patchProposal.checkpointRef ? "recorded" : "not recorded"}</span></div><div className="patch-decision"><label htmlFor="patch-actor">Actor</label><input id="patch-actor" value={patchActor} onChange={(event) => setPatchActor(event.target.value)} /><label htmlFor="patch-note">Decision note</label><input id="patch-note" value={patchNote} onChange={(event) => setPatchNote(event.target.value)} /><div className="patch-actions"><button type="button" className="primary-button" onClick={() => void runPatchAction("approve")} disabled={patchBusy || !["checkpointed", "awaiting_approval"].includes(patchProposal.status)}>Approve proposal</button><button type="button" className="ghost-button compact danger-button" onClick={() => void runPatchAction("reject")} disabled={patchBusy || ["approved", "rejected"].includes(patchProposal.status)}>Reject proposal</button></div></div><div className="event-log"><div className="event-log-title">Proposal event log</div>{patchEvents.map((item) => <div className="event-row" key={item.id}><span>{item.type}</span><small>{item.actor} · {new Date(item.createdAt).toLocaleString()}</small></div>)}</div></div>}</section>
+      <section className="panel agents-panel"><div className="panel-heading"><div><span className="panel-index">05</span><h3>Execution audit</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void loadAudit()} disabled={!taskId}>REFRESH AUDIT</button><button className="ghost-button compact" onClick={() => void loadReport()} disabled={!taskId}>LOAD REPORT</button></div></div>{taskId ? <dl className="data-list"><div><dt>Task</dt><dd>{taskId.slice(0, 18)}…</dd></div><div><dt>Status</dt><dd>{audit?.status ?? "queued"}</dd></div><div><dt>Events</dt><dd>{audit?.events.length ?? 0}</dd></div><div><dt>Model cost</dt><dd>{audit?.model_usage.reduce((sum, item) => sum + item.estimatedCost, 0).toFixed(4) ?? "0.0000"}</dd></div>{report && <><div><dt>Summary</dt><dd>{report.summary}</dd></div><div><dt>Findings</dt><dd>{report.persistedFindings.length}</dd></div></>}</dl> : <p className="empty-note">Создайте задачу после прохождения readiness gate.</p>}</section>
     </main>
   </div>;
 }

@@ -10,6 +10,7 @@ from app.core.enums import PatchStatus
 from app.db.session import get_db
 from app.models import PatchProposal, Project, Task
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
+from app.services.patch_impact import analyze_patch_impact
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -70,6 +71,17 @@ def get_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict[
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     return _proposal_response(proposal)
+
+
+@router.post("/{proposal_id}/impact")
+def analyze_proposal_impact(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    impacts = analyze_patch_impact(json.loads(proposal.files_json))
+    proposal.impact_json = json.dumps(impacts, ensure_ascii=False)
+    db.commit()
+    return {"proposalId": proposal.id, "status": "analyzed", "impact": impacts}
 
 
 def _proposal_response(proposal: PatchProposal) -> dict[str, object]:

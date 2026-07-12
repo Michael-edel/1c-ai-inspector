@@ -1,6 +1,6 @@
 services:
   postgres:
-    ports: []
+    ports: !reset []
     restart: unless-stopped
 
   backend:

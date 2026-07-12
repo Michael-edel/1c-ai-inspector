@@ -11,10 +11,25 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+FOUNDATION_TABLES = (
+    "mcp_servers",
+    "projects",
+    "agents",
+    "tasks",
+    "task_events",
+    "tool_calls",
+    "findings",
+    "finding_status_events",
+    "normalized_tools",
+    "model_usage",
+    "prompt_execution_snapshots",
+)
+
 
 def upgrade() -> None:
     bind = op.get_bind()
-    Base.metadata.create_all(bind=bind)
+    tables = [Base.metadata.tables[name] for name in FOUNDATION_TABLES]
+    Base.metadata.create_all(bind=bind, tables=tables)
     runtime_role = os.environ.get("RUNTIME_DB_USER", "inspector_runtime")
     quoted_role = '"' + runtime_role.replace('"', '""') + '"'
     op.execute(f"GRANT USAGE ON SCHEMA public TO {quoted_role}")
@@ -26,4 +41,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    Base.metadata.drop_all(bind=bind)
+    tables = [Base.metadata.tables[name] for name in FOUNDATION_TABLES]
+    Base.metadata.drop_all(bind=bind, tables=tables)

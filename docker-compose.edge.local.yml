@@ -1,0 +1,4 @@
+services:
+  caddy:
+    volumes:
+      - ./infra/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro

@@ -140,6 +140,10 @@ Production deployment использует override `docker-compose.production.y
 
 Резервная копия PostgreSQL: `.\scripts\backup.ps1 -OutputDirectory .\backups`. Скрипт создает custom-format dump, проверяет его через `pg_restore --list` и удаляет только dump-файлы старше `KeepDays`. Восстановление намеренно требует явного подтверждения: `.\scripts\restore.ps1 -BackupFile .\backups\<file>.dump -ConfirmRestore`.
 
+Для локального production-like smoke, если 80/443 заняты, задайте временные `CADDY_HTTP_PORT` и `CADDY_HTTPS_PORT` и добавьте `docker-compose.edge.local.yml`; этот override использует `tls internal` для тестовых доменов. Production defaults остаются 80/443 и публичный ACME/TLS из `docker-compose.edge.production.yml`.
+
+Production PostgreSQL проходит Alembic migrations на чистой базе; `migrate` повторяет запуск до пяти раз при transient startup race. Compose-override закрывает базовый `5432`, а edge-override оставляет backend/frontend/Keycloak доступными только внутри сети.
+
 Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, отсутствие write tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
 
 Единый release acceptance v0.6 запускается так:

@@ -48,6 +48,15 @@ if ($impact.status -ne "analyzed" -or @($impact.impact).Count -lt 1) {
     throw "Candidate impact was not recorded"
 }
 
+$validation = Post-Api "/api/v1/patch-proposals/$($proposal.id)/revalidate" @{
+    currentRevision = $proposal.sourceRevision
+    files = @(@{
+        path = "CommonModules/AcceptanceSmoke.bsl"
+        current = "Procedure AcceptanceSmoke();`nEndProcedure;`n"
+    })
+}
+if ($validation.status -ne "valid") { throw "Source snapshot was not validated" }
+
 $checkpoint = Post-Api "/api/v1/patch-proposals/$($proposal.id)/checkpoint"
 if ($checkpoint.status -ne "checkpointed" -or $checkpoint.applied -ne $false -or -not $checkpoint.checkpointRef) {
     throw "Logical checkpoint is invalid"

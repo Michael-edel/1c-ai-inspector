@@ -163,6 +163,9 @@ class PatchProposal(TimestampMixin, Base):
     checkpoint_ref: Mapped[str | None] = mapped_column(String(255))
     approval_note: Mapped[str | None] = mapped_column(Text)
     approved_by: Mapped[str | None] = mapped_column(String(128))
+    source_validation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unverified")
+    source_validation_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    source_validated_at: Mapped[datetime | None] = mapped_column()
 
 
 class PatchEvent(TimestampMixin, Base):

@@ -16,6 +16,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `GET /api/v1/patch-proposals/{id}/package` возвращает ZIP-пакет в памяти с `manifest.json`, `proposal.diff` и README-инструкцией. Manifest содержит `applyAllowed: false`; сервер не сохраняет ZIP на диск и не выполняет изменения.
 
+`POST /api/v1/patch-proposals/{id}/revalidate` принимает текущий read-only snapshot и revision, сравнивает SHA-256 с исходным proposal и сохраняет `valid` или `stale`. Checkpoint разрешен только после `valid`; изменившийся или неполный source snapshot блокирует checkpoint.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;
@@ -105,7 +107,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
-Patch Planner в v0.2 работает в proposal-only режиме: после создания diff можно построить candidate impact и логический checkpoint, но ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
+Patch Planner в v0.3 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, затем можно построить candidate impact и логический checkpoint. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.

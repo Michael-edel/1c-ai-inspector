@@ -17,6 +17,7 @@ from app.services.patch_impact import analyze_patch_impact
 from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 from app.services.patch_package import build_patch_package
+from app.services.patch_source import revalidate_source
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -41,6 +42,18 @@ class PatchProposalCreateRequest(BaseModel):
 class PatchDecisionRequest(BaseModel):
     actor: str = Field(min_length=1, max_length=128)
     note: str = Field(min_length=1, max_length=10_000)
+
+
+class PatchSourceFileInput(BaseModel):
+    path: str = Field(min_length=1, max_length=500)
+    current: str = Field(max_length=500_000)
+
+
+class PatchRevalidateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    current_revision: str | None = Field(default=None, alias="currentRevision", max_length=128)
+    files: list[PatchSourceFileInput] = Field(min_length=1, max_length=50)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -98,6 +111,35 @@ def analyze_proposal_impact(proposal_id: str, db: Session = Depends(get_db)) -> 
     return {"proposalId": proposal.id, "status": "analyzed", "impact": impacts}
 
 
+@router.post("/{proposal_id}/revalidate")
+def revalidate_patch_source(
+    proposal_id: str,
+    payload: PatchRevalidateRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    result = revalidate_source(
+        json.loads(proposal.files_json),
+        [item.model_dump() for item in payload.files],
+        proposal.source_revision,
+        payload.current_revision,
+    )
+    proposal.source_validation_status = "valid" if result["valid"] else "stale"
+    proposal.source_validation_json = json.dumps(result, ensure_ascii=False)
+    proposal.source_validated_at = datetime.now(timezone.utc)
+    record_patch_event(
+        db,
+        proposal.id,
+        "source_revalidated" if result["valid"] else "source_stale",
+        "system",
+        result,
+    )
+    db.commit()
+    return {"proposalId": proposal.id, "status": proposal.source_validation_status, "validation": result}
+
+
 @router.post("/{proposal_id}/checkpoint")
 def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
@@ -105,6 +147,8 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     if proposal.status not in {PatchStatus.PROPOSED.value, PatchStatus.CHECKPOINTED.value}:
         raise HTTPException(status_code=409, detail="Patch proposal is not checkpointable")
+    if proposal.source_validation_status != "valid":
+        raise HTTPException(status_code=409, detail="PATCH_SOURCE_NOT_VALIDATED")
     proposal.checkpoint_ref = create_checkpoint_ref(
         proposal.id,
         proposal.source_revision,
@@ -149,6 +193,8 @@ def approve_patch_proposal(
         "status": proposal.status,
         "approvedBy": proposal.approved_by,
         "approvalNote": proposal.approval_note,
+        "sourceValidationStatus": proposal.source_validation_status,
+        "sourceValidation": json.loads(proposal.source_validation_json),
         "applied": False,
     }
 

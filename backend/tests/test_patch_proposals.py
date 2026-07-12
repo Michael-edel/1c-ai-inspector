@@ -1,11 +1,13 @@
 import pytest
+from hashlib import sha256
+from io import BytesIO
+from zipfile import ZipFile
 
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot
 from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 from app.services.patch_package import build_patch_package
-from zipfile import ZipFile
-from io import BytesIO
+from app.services.patch_source import revalidate_source
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -79,3 +81,23 @@ def test_patch_package_contains_manifest_and_diff_without_apply_permission() -> 
         assert manifest["proposalId"] == "pp_package"
         assert manifest["applyAllowed"] is False
         assert archive.read("proposal.diff").startswith(b"--- a/module.bsl")
+
+
+def test_source_revalidation_accepts_matching_snapshot() -> None:
+    original = "A\n"
+    expected = [{"path": "module.bsl", "originalSha256": sha256(original.encode()).hexdigest()}]
+
+    result = revalidate_source(expected, [{"path": "module.bsl", "current": original}], "rev-1", "rev-1")
+
+    assert result["valid"] is True
+    assert result["mismatches"] == []
+
+
+def test_source_revalidation_rejects_changed_content_and_revision() -> None:
+    original = "A\n"
+    expected = [{"path": "module.bsl", "originalSha256": sha256(original.encode()).hexdigest()}]
+
+    result = revalidate_source(expected, [{"path": "module.bsl", "current": "B\n"}], "rev-1", "rev-2")
+
+    assert result["valid"] is False
+    assert {item["type"] for item in result["mismatches"]} == {"revision_mismatch", "content_mismatch"}

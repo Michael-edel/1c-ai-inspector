@@ -1,8 +1,8 @@
-# 1C AI Inspector v0.2
+# 1C AI Inspector v0.3
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
-Текущий этап v0.2 добавляет proposal-only Patch Planner: система готовит изменения и diff, но не применяет их к 1С, workspace или Git.
+Текущий этап v0.3 развивает proposal-only Patch Planner: система готовит изменения, проверяет source snapshot, impact evidence и validation gates, но не применяет их к 1С, workspace или Git.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
@@ -88,6 +88,14 @@ Live acceptance после настройки `.env` запускается ко
 ```
 
 Скрипт создает временные proposal-only данные, проверяет candidate impact, логический checkpoint, approve/reject и журнал из событий. Он не применяет diff, не меняет workspace/Git и не записывает изменения в конфигурацию 1С.
+
+Финальную приемку v0.3 запускайте при работающем Compose:
+
+```powershell
+.\scripts\v03-acceptance.ps1
+```
+
+Скрипт проверяет read-only impact evidence, source revalidation, validation-gates, checkpoint, role policy, ZIP package и полный audit log. Весь контур остается proposal-only.
 
 Тесты без Docker:
 

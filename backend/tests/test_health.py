@@ -18,7 +18,7 @@ def test_policy_readiness() -> None:
         assert response.json()["status"] == "not_ready"
         assert response.json()["capabilitiesStatus"] == "not_discovered"
         assert "mcp_tools_not_discovered" in response.json()["reasons"]
-        assert "agent_capabilities_missing" in response.json()["reasons"]
+        assert "agent_capabilities_missing" not in response.json()["reasons"]
 
 
 def test_task_creation_is_blocked_until_toolset_is_ready() -> None:
@@ -42,9 +42,9 @@ def test_agents_endpoint_lists_v01_agents() -> None:
     }
 
 
-def test_capabilities_endpoint_reports_agent_gaps() -> None:
+def test_capabilities_endpoint_reports_discovery_gap() -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/system/capabilities")
         assert response.status_code == 200
         assert response.json()["status"] == "not_ready"
-        assert "1c_code_assistant" in response.json()["missingByAgent"]
+        assert response.json()["missingByAgent"] == {}

@@ -15,6 +15,7 @@ def test_bridge_policy_is_read_only() -> None:
         "get_form_structure",
         "get_metadata_tree",
         "get_object_structure",
+        "search_code",
         "validate_query",
     }
     assert "execute_query" not in snapshot.published_tools

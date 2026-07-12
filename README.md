@@ -27,6 +27,7 @@ Read-only web-приложение для анализа кода 1С через
 - `GET /api/v1/tasks/{task_id}/audit` для task events, tool calls и model usage.
 - `GET /api/v1/tasks/{task_id}/report` для structured report и сохранённых findings.
 - `POST /api/v1/projects/sync` для read-only MCP-синхронизации проектов.
+- `search_code` для read-only поиска по выгруженным BSL-модулям конфигурации.
 
 ## Запуск в PowerShell
 
@@ -81,7 +82,7 @@ MCP connector использует Streamable HTTP session lifecycle: `initializ
 
 Для `sales-ai-manager/onec-mcp-bridge` доступен режим `MCP_TRANSPORT=bridge`: Inspector вызывает bridge endpoints `/health`, `/tools`, `/tools/call` и передаёт `MCP_BRIDGE_TOKEN` как Bearer token. Raw MCP режим остаётся `MCP_TRANSPORT=streamable-http`.
 
-Текущая bridge policy публикует только фактически доступные read-only tools: syntax help, configuration info, event log, form/metadata/object structure и query validation. `execute_query` намеренно не публикуется. Если bridge не возвращает `search_code`, Code Assistant и Audit Agent остаются заблокированными readiness gate до появления этого capability.
+Текущая bridge policy публикует только фактически доступные read-only tools: syntax help, configuration info, event log, form/metadata/object structure, code search и query validation. `execute_query` намеренно не публикуется. `search_code` работает по отдельной выгрузке конфигурации через `DumpConfigToFiles` и не требует изменения конфигурации 1С; bridge запускается с параметром `mcp-1c --dump <path>`. Без успешного discovery Code Assistant и Audit Agent по-прежнему блокируются readiness gate.
 
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 

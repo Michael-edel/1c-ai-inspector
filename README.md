@@ -10,7 +10,7 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 
-`POST /api/v1/patch-proposals/{id}/approve` принимает `actor` и `note` только для checkpointed proposal. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.
+`POST /api/v1/patch-proposals/{id}/approve` принимает `actor`, `role` и `note` только для checkpointed proposal; роль `maintainer` или `owner` обязательна. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal; доступна роль `reviewer`, `maintainer` или `owner`. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.
 
 `GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.
 
@@ -110,6 +110,8 @@ Task Orchestrator не создаёт агентную задачу, если to
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
 Patch Planner в v0.3 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, затем можно построить candidate impact и логический checkpoint. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
+
+Роль из request пока является policy claim и сохраняется в audit; полноценная проверка личности/SSO/RBAC находится за пределами v0.3 и должна быть добавлена перед production approval.
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.

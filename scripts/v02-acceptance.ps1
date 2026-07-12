@@ -67,6 +67,7 @@ if ($checkpoint.status -ne "checkpointed" -or $checkpoint.applied -ne $false -or
 
 $decision = Post-Api "/api/v1/patch-proposals/$($proposal.id)/approve" @{
     actor = "v02-acceptance"
+    role = "maintainer"
     note = "Approval is recorded without applying the diff."
 }
 if ($decision.status -ne "approved" -or $decision.applied -ne $false) {
@@ -93,6 +94,7 @@ $rejectBody = @{
 $rejectProposal = Post-Api "/api/v1/patch-proposals" $rejectBody
 $rejection = Post-Api "/api/v1/patch-proposals/$($rejectProposal.id)/reject" @{
     actor = "v02-acceptance"
+    role = "reviewer"
     note = "Rejected without applying the diff."
 }
 if ($rejection.status -ne "rejected" -or $rejection.applied -ne $false) {

@@ -5,7 +5,13 @@ from zipfile import ZipFile
 
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot
 from app.services.patch_checkpoint import create_checkpoint_ref
-from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
+from app.services.patch_workflow import (
+    PatchWorkflowError,
+    approve_status,
+    authorize_approval,
+    authorize_rejection,
+    reject_status,
+)
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
@@ -55,6 +61,14 @@ def test_patch_workflow_rejects_only_final_decisions() -> None:
     assert reject_status("checkpointed") == "rejected"
     with pytest.raises(PatchWorkflowError, match="PATCH_DECISION_ALREADY_FINAL"):
         reject_status("approved")
+
+
+def test_patch_workflow_requires_maintainer_or_owner_for_approval() -> None:
+    authorize_approval("maintainer")
+    authorize_approval("owner")
+    with pytest.raises(PatchWorkflowError, match="PATCH_APPROVAL_ROLE_REQUIRED"):
+        authorize_approval("reviewer")
+    authorize_rejection("reviewer")
 
 
 def test_patch_package_contains_manifest_and_diff_without_apply_permission() -> None:

@@ -7,6 +7,16 @@ class PatchWorkflowError(ValueError):
     """Raised when a proposal cannot enter the requested decision state."""
 
 
+def authorize_approval(role: str) -> None:
+    if role not in {"maintainer", "owner"}:
+        raise PatchWorkflowError("PATCH_APPROVAL_ROLE_REQUIRED")
+
+
+def authorize_rejection(role: str) -> None:
+    if role not in {"reviewer", "maintainer", "owner"}:
+        raise PatchWorkflowError("PATCH_DECISION_ROLE_INVALID")
+
+
 def approve_status(current_status: str) -> str:
     if current_status not in {PatchStatus.CHECKPOINTED.value, PatchStatus.AWAITING_APPROVAL.value}:
         raise PatchWorkflowError("PATCH_NOT_READY_FOR_APPROVAL")

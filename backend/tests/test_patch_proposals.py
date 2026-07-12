@@ -16,6 +16,7 @@ from app.services.patch_package import build_patch_package, verify_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
 from app.services.auth import AuthError, issue_auth_token, verify_auth_token
+from app.services.patch_policy import PatchPolicyError, authorize_environment
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -180,3 +181,11 @@ def test_auth_token_verifies_claims_and_rejects_tampering() -> None:
     assert identity.role == "maintainer"
     with pytest.raises(AuthError, match="AUTH_TOKEN_INVALID"):
         verify_auth_token(token + "x", secret, now=1)
+
+
+def test_patch_policy_requires_owner_for_candidates_and_test() -> None:
+    with pytest.raises(PatchPolicyError, match="PATCH_CANDIDATE_OWNER_REQUIRED"):
+        authorize_environment("maintainer", "sandbox", "sandbox", [{"risk": "candidate"}])
+    with pytest.raises(PatchPolicyError, match="PATCH_TEST_OWNER_REQUIRED"):
+        authorize_environment("maintainer", "test", "test", [{"risk": "evidenced"}])
+    authorize_environment("maintainer", "sandbox", "sandbox", [{"risk": "evidenced"}])

@@ -24,6 +24,8 @@ Read-only web-приложение для анализа кода 1С через
 
 Approve, reject и package download требуют signed Bearer token из `INSPECTOR_AUTH_SECRET`. Subject и role берутся из проверенной подписи, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.
 
+Approval policy учитывает environment и impact risk: `sandbox` с полностью evidenced impact доступен maintainer/owner, `test` требует owner, а любой оставшийся `candidate` требует owner. Approval также блокируется, если environment proposal не совпадает с `APP_ENVIRONMENT` backend.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;

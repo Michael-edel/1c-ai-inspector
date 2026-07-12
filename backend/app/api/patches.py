@@ -31,6 +31,7 @@ from app.services.patch_validation import validate_patch_proposal
 from app.services.patch_mcp_evidence import extract_search_evidence
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.services.auth import AuthContext
+from app.services.patch_policy import PatchPolicyError, authorize_environment
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -300,6 +301,7 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
 def approve_patch_proposal(
     proposal_id: str,
     payload: PatchDecisionRequest,
+    request: Request,
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -310,8 +312,14 @@ def approve_patch_proposal(
         raise HTTPException(status_code=409, detail="PATCH_NOT_VALIDATED")
     try:
         authorize_approval(identity.role)
+        authorize_environment(
+            identity.role,
+            proposal.target_environment,
+            request.app.state.settings.app_environment,
+            json.loads(proposal.impact_json),
+        )
         proposal.status = approve_status(proposal.status)
-    except PatchWorkflowError as exc:
+    except (PatchWorkflowError, PatchPolicyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     proposal.approved_by = identity.subject
     proposal.approval_note = payload.note
@@ -321,7 +329,15 @@ def approve_patch_proposal(
         proposal.id,
         "approved",
         identity.subject,
-        {"note": payload.note, "role": identity.role, "applied": False},
+        {
+            "note": payload.note,
+            "role": identity.role,
+            "environment": proposal.target_environment,
+            "unresolvedCandidates": sum(
+                1 for item in json.loads(proposal.impact_json) if item.get("risk") == "candidate"
+            ),
+            "applied": False,
+        },
     )
     db.commit()
     return {

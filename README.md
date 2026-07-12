@@ -156,6 +156,14 @@ Production-вариант дополнительно требует настро
 
 Локальный smoke подтверждает signed compatibility и live EDT MCP; production-вариант нельзя считать пройденным без реальных значений `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE` и запуска внешнего IdP.
 
+Для тестовой среды с локальным IdP используйте Keycloak:
+
+```powershell
+.\scripts\keycloak-acceptance.ps1 -Build -KeepRunning
+```
+
+Скрипт поднимает Keycloak на `http://127.0.0.1:8081`, импортирует realm `inspector`, создает временных пользователей с ролями `maintainer` и `owner`, подключает backend к внутреннему JWKS URL и выполняет реальный JWT approval flow. `-Build` нужен только после изменения образов; при повторном запуске достаточно `.\scripts\keycloak-acceptance.ps1 -KeepRunning`. Пароли и package secret генерируются только в памяти процесса; конфигурация 1С не меняется. Для остановки: `docker compose --env-file .env -f docker-compose.yml -f docker-compose.keycloak.yml down`.
+
 Тесты без Docker:
 
 ```powershell

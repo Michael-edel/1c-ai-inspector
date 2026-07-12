@@ -14,8 +14,9 @@ $response = Invoke-RestMethod -Uri $JwksUrl -Method Get
 if (-not $response.keys -or @($response.keys).Count -lt 1) {
     throw "JWKS response does not contain keys"
 }
-
-$invalid = @($response.keys | Where-Object {
+$signingKeys = @($response.keys | Where-Object { $_.use -eq "sig" -and $_.alg -in @("RS256", "RS384", "RS512") })
+if ($signingKeys.Count -lt 1) { throw "JWKS response does not contain a supported signing key" }
+$invalid = @($signingKeys | Where-Object {
     $_.kty -ne "RSA" -or -not $_.kid -or $_.alg -notin @("RS256", "RS384", "RS512")
 })
 if ($invalid.Count -gt 0) {

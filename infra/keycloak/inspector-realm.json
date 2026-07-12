@@ -1,0 +1,36 @@
+{
+  "realm": "inspector",
+  "enabled": true,
+  "displayName": "1C AI Inspector local test realm",
+  "clients": [
+    {
+      "clientId": "inspector-api",
+      "name": "1C AI Inspector local API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "inspector-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "inspector-api",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "reviewer" },
+      { "name": "maintainer" },
+      { "name": "owner" }
+    ]
+  }
+}

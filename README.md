@@ -128,6 +128,14 @@ Live acceptance после настройки `.env` запускается ко
 
 Скрипт проверяет auth, automatic MCP evidence, immutable package version `1`, explicit version download, metrics authorization, final-state conflict и owner-only candidate policy. Он не применяет diff и не меняет конфигурацию 1С.
 
+Live-проверка именно EDT MCP запускается так:
+
+```powershell
+.\scripts\edt-live-acceptance.ps1
+```
+
+Скрипт проверяет MCP initialize, discovery фактического `MCP_PATCH_SEARCH_TOOL`, режим `read-only`/категорию `code.search`, project sync и evidence через `impact/mcp`. Он создает только proposal-only данные.
+
 Тесты без Docker:
 
 ```powershell

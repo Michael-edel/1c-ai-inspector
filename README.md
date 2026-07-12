@@ -92,6 +92,7 @@ Agent prompt получает фактическую JSON Schema `StructuredRepo
 Telemetry в `StructuredReport` не доверяет значениям модели: model usage берётся из adapter, а tool usage — из фактически записанных retrieval calls и их длительности.
 
 Live-проверка Query Agent подтверждена на подключенной базе: `validate_query` проверил запрос без выполнения данных, `get_metadata_tree` подтвердил наличие справочника, а итоговый report сохранил validation, audit и фактическое model/tool usage.
+Live-проверка Audit Agent также подтверждена: read-only поиск кода и чтение структуры документа сформировали findings с evidence, а те же findings были сохранены в PostgreSQL и доступны через report endpoint.
 
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 

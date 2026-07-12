@@ -142,6 +142,20 @@ Production deployment использует override `docker-compose.production.y
 
 Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, отсутствие write tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
 
+Единый release acceptance v0.6 запускается так:
+
+```powershell
+.\scripts\v06-acceptance.ps1
+```
+
+Production-вариант дополнительно требует настроенный внешний IdP/JWKS и отдельный package signing secret:
+
+```powershell
+.\scripts\v06-acceptance.ps1 -Production
+```
+
+Локальный smoke подтверждает signed compatibility и live EDT MCP; production-вариант нельзя считать пройденным без реальных значений `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE` и запуска внешнего IdP.
+
 Тесты без Docker:
 
 ```powershell

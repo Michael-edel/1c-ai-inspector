@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="1C AI Inspector", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="1C AI Inspector", version="0.6.0", lifespan=lifespan)
 configure_logging()
 request_logger = logging.getLogger("app.http")
 app.include_router(system_router)

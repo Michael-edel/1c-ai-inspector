@@ -6,7 +6,7 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
-`POST /api/v1/patch-proposals/{id}/impact` строит candidate impact analysis по измененным путям 1С и сохраняет связи с объектами; это предварительный анализ, а не утверждение фактической зависимости.
+`POST /api/v1/patch-proposals/{id}/impact` строит candidate impact analysis по измененным путям 1С. В body можно передать только evidence от read-only `search_code` или `get_object_structure`; совпавшие объекты получают `risk: evidenced`, остальные остаются candidate.
 
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 

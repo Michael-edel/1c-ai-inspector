@@ -52,3 +52,22 @@ def analyze_patch_impact(files: list[dict[str, Any]]) -> list[dict[str, str]]:
                 )
                 seen.add(key)
     return impacts
+
+
+def enrich_patch_impact(
+    impacts: list[dict[str, str]], evidence: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Attach caller-provided read-only evidence to matching candidates only."""
+    evidence_by_key = {
+        (str(item.get("objectFqn")), str(item.get("relation"))): item for item in evidence
+    }
+    enriched: list[dict[str, Any]] = []
+    for impact in impacts:
+        item: dict[str, Any] = dict(impact)
+        source = evidence_by_key.get((impact["objectFqn"], impact["relation"]))
+        if source is not None:
+            item["risk"] = "evidenced"
+            item["source"] = str(source["sourceTool"])
+            item["evidence"] = list(source["evidence"])
+        enriched.append(item)
+    return enriched

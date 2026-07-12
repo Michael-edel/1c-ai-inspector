@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -13,7 +14,7 @@ from app.db.session import get_db
 from app.models import PatchEvent, PatchProposal, Project, Task
 from app.services.patch_audit import record_patch_event
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
-from app.services.patch_impact import analyze_patch_impact
+from app.services.patch_impact import analyze_patch_impact, enrich_patch_impact
 from app.services.patch_checkpoint import create_checkpoint_ref
 from app.services.patch_workflow import PatchWorkflowError, approve_status, reject_status
 from app.services.patch_package import build_patch_package
@@ -54,6 +55,19 @@ class PatchRevalidateRequest(BaseModel):
 
     current_revision: str | None = Field(default=None, alias="currentRevision", max_length=128)
     files: list[PatchSourceFileInput] = Field(min_length=1, max_length=50)
+
+
+class PatchImpactEvidence(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    object_fqn: str = Field(alias="objectFqn", min_length=1, max_length=500)
+    relation: str = Field(min_length=1, max_length=100)
+    source_tool: Literal["search_code", "get_object_structure"] = Field(alias="sourceTool")
+    evidence: list[str] = Field(min_length=1, max_length=20)
+
+
+class PatchImpactRequest(BaseModel):
+    evidence: list[PatchImpactEvidence] = Field(default_factory=list, max_length=100)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -100,11 +114,20 @@ def get_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -> dict[
 
 
 @router.post("/{proposal_id}/impact")
-def analyze_proposal_impact(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+def analyze_proposal_impact(
+    proposal_id: str,
+    payload: PatchImpactRequest | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     impacts = analyze_patch_impact(json.loads(proposal.files_json))
+    if payload and payload.evidence:
+        impacts = enrich_patch_impact(
+            impacts,
+            [item.model_dump(by_alias=True) for item in payload.evidence],
+        )
     proposal.impact_json = json.dumps(impacts, ensure_ascii=False)
     record_patch_event(db, proposal.id, "impact_analyzed", "system", {"candidateCount": len(impacts)})
     db.commit()

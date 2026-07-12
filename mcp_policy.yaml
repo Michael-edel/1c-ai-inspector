@@ -1,3 +1,31 @@
 policyId: edt-mcp-default
 version: 1.0.0
-tools: {}
+tools:
+  bsl_syntax_help:
+    name: bsl_syntax_help
+    category: bsl.read
+    mode: read-only
+  get_configuration_info:
+    name: get_configuration_info
+    category: metadata.read
+    mode: read-only
+  get_event_log:
+    name: get_event_log
+    category: audit.read
+    mode: read-only
+  get_form_structure:
+    name: get_form_structure
+    category: metadata.read
+    mode: read-only
+  get_metadata_tree:
+    name: get_metadata_tree
+    category: metadata.read
+    mode: read-only
+  get_object_structure:
+    name: get_object_structure
+    category: references.read
+    mode: read-only
+  validate_query:
+    name: validate_query
+    category: query.validate
+    mode: read-only

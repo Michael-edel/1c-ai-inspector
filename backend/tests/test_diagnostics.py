@@ -10,4 +10,5 @@ def test_diagnostics_do_not_expose_model_api_key() -> None:
         body = response.json()
         assert body["model"]["apiKeyConfigured"] is True
         assert "test-key" not in str(body)
-        assert body["mcp"]["policyTools"] == 0
+        assert body["mcp"]["policyTools"] == 7
+        assert body["mcp"]["bridgeTokenConfigured"] in {True, False}

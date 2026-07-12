@@ -17,7 +17,8 @@ def test_policy_readiness() -> None:
         assert response.json()["onlyReadOnlyToolsPublished"] is True
         assert response.json()["status"] == "not_ready"
         assert response.json()["capabilitiesStatus"] == "not_discovered"
-        assert "no_tools_discovered" in response.json()["reasons"]
+        assert "mcp_tools_not_discovered" in response.json()["reasons"]
+        assert "agent_capabilities_missing" in response.json()["reasons"]
 
 
 def test_task_creation_is_blocked_until_toolset_is_ready() -> None:

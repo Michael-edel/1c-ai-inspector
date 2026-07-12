@@ -81,6 +81,8 @@ MCP connector использует Streamable HTTP session lifecycle: `initializ
 
 Для `sales-ai-manager/onec-mcp-bridge` доступен режим `MCP_TRANSPORT=bridge`: Inspector вызывает bridge endpoints `/health`, `/tools`, `/tools/call` и передаёт `MCP_BRIDGE_TOKEN` как Bearer token. Raw MCP режим остаётся `MCP_TRANSPORT=streamable-http`.
 
+Текущая bridge policy публикует только фактически доступные read-only tools: syntax help, configuration info, event log, form/metadata/object structure и query validation. `execute_query` намеренно не публикуется. Если bridge не возвращает `search_code`, Code Assistant и Audit Agent остаются заблокированными readiness gate до появления этого capability.
+
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 
 Model adapter принимает JSON string, content blocks и JSON в markdown fence, после чего всё равно валидирует ответ как `StructuredReport`.

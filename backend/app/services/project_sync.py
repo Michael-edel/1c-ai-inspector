@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -12,6 +13,13 @@ from app.models import McpServer, Project
 
 class ProjectSyncError(ValueError):
     """Raised when MCP project data cannot be normalized safely."""
+
+
+def _text_content(result: dict[str, Any]) -> str:
+    for item in result.get("content", []):
+        if item.get("type") == "text" and isinstance(item.get("text"), str):
+            return item["text"]
+    raise ProjectSyncError("MCP_PROJECTS_RESPONSE_INVALID")
 
 
 def extract_project_items(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -29,6 +37,29 @@ def extract_project_items(result: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
         raise ProjectSyncError("MCP_PROJECTS_RESPONSE_INVALID")
     return raw
+
+
+def extract_single_configuration_project(
+    result: dict[str, Any], capabilities: set[str]
+) -> list[dict[str, Any]]:
+    """Represent a single local 1C base when the bridge has no project-list tool."""
+    text = _text_content(result)
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) == 2 and cells[0] and not re.fullmatch(r"-+", cells[0]):
+            values[cells[0]] = cells[1]
+    name = values.get("Конфигурация", "").strip()
+    if not name:
+        raise ProjectSyncError("MCP_CONFIGURATION_INFO_INVALID")
+    return [
+        {
+            "id": f"configuration:{name}",
+            "name": name,
+            "environment": Environment.SANDBOX.value,
+            "capabilities": sorted(capabilities),
+        }
+    ]
 
 
 class ProjectSyncService:
@@ -90,7 +121,11 @@ async def sync_projects(
     connector: McpConnector,
     tool_name: str,
     endpoint_url: str,
+    capabilities: set[str] | None = None,
 ) -> int:
     result = await connector.call_tool(tool_name, {})
-    items = extract_project_items(result)
+    if tool_name == "get_configuration_info":
+        items = extract_single_configuration_project(result, capabilities or set())
+    else:
+        items = extract_project_items(result)
     return ProjectSyncService(db, endpoint_url).persist(items)

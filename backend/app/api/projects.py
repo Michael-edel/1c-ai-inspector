@@ -45,6 +45,7 @@ async def sync_project_list(request: Request, db: Session = Depends(get_db)) -> 
             connector,
             tool_name,
             str(request.app.state.settings.mcp_server_url),
+            capabilities={tool.category for tool in request.app.state.policy_snapshot.published_tools.values()},
         )
     except (httpx.HTTPError, RuntimeError, ToolNotAllowedError, ProjectSyncError) as exc:
         db.rollback()

@@ -69,7 +69,7 @@ Readiness Gate возвращает `not_ready`, пока tools не обнар�
 
 MCP discovery получает `tools/list`, принимает только инструменты, перечисленные в policy, сохраняет нормализованный snapshot в PostgreSQL и отправляет на MCP Server исходное имя инструмента. Неизвестные инструменты отклоняются до сетевого запроса. Readiness становится `ready` только после успешного discovery и покрытия capabilities всех трёх агентов; policy без реальных EDT tool names остаётся `NOT READY`. PostgreSQL создаёт отдельные migration/runtime роли и default privileges для runtime-запросов.
 
-Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании задача получает `queued`, worker атомарно переводит её в `running`, после чего разрешены только `completed`, `failed` или `cancelled`. Сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
+Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сначала сохраняется строка task, затем связанный execution snapshot и событие создания; задача получает `queued`, worker атомарно переводит её в `running`, после чего разрешены только `completed`, `failed` или `cancelled`. Сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
@@ -87,6 +87,9 @@ MCP connector использует Streamable HTTP session lifecycle: `initializ
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 
 Model adapter принимает JSON string, content blocks и JSON в markdown fence, после чего всё равно валидирует ответ как `StructuredReport`.
+Для моделей GPT-5 адаптер не передаёт `temperature=0`, потому что эти модели принимают только значение по умолчанию; для остальных OpenAI-compatible моделей сохраняется детерминированный `temperature=0`.
+Agent prompt получает фактическую JSON Schema `StructuredReport`, но итоговый ответ всё равно проверяется сервером перед сохранением task и findings.
+Telemetry в `StructuredReport` не доверяет значениям модели: model usage берётся из adapter, а tool usage — из фактически записанных retrieval calls и их длительности.
 
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 

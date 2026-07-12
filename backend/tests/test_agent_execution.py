@@ -29,6 +29,13 @@ class FakeAdapter:
         return ModelResult(json.dumps(report), 3, 5)
 
 
+class SchemaCheckingAdapter(FakeAdapter):
+    def complete(self, messages: list[dict[str, str]]) -> ModelResult:
+        assert "StructuredReport JSON Schema" in messages[0]["content"]
+        assert '"taskId"' in messages[0]["content"]
+        return super().complete(messages)
+
+
 def test_agent_execution_persists_model_usage() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -49,9 +56,38 @@ def test_agent_execution_persists_model_usage() -> None:
             AgentRegistry().get("1c_code_assistant"),
             get_settings(),
             FakeAdapter(),
+            tool_calls=[{"durationMs": 17}],
         )
         session.commit()
         assert report.status == "completed"
+        assert report.tool_usage.calls == 1
+        assert report.tool_usage.duration_ms == 17
+        assert report.model_usage.input_tokens == 3
+        assert report.model_usage.output_tokens == 5
         usage = session.scalars(select(ModelUsage).where(ModelUsage.task_id == task.id)).one()
         assert usage.input_tokens == 3
         assert usage.output_tokens == 5
+
+
+def test_agent_prompt_contains_structured_report_schema() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_schema",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "inspect"}),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_code_assistant"),
+            get_settings(),
+            SchemaCheckingAdapter(),
+        )
+        assert report.status == "completed"

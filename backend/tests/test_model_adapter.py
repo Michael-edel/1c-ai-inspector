@@ -43,3 +43,19 @@ def test_openai_compatible_adapter_accepts_content_blocks_and_json_fence() -> No
         get_settings(), transport=httpx.MockTransport(handler)
     ).complete([])
     assert json.loads(result.content) == {"ok": True}
+
+
+def test_gpt5_adapter_uses_model_default_temperature() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert "temperature" not in payload
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok":true}'}}]},
+        )
+
+    settings = get_settings().model_copy(update={"model_name": "gpt-5.5"})
+    result = OpenAICompatibleAdapter(
+        settings, transport=httpx.MockTransport(handler)
+    ).complete([])
+    assert json.loads(result.content) == {"ok": True}

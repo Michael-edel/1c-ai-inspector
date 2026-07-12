@@ -111,9 +111,10 @@ def create_task(
         policy_checksum=snapshot.checksum,
         toolset_checksum=snapshot.toolset_checksum,
     )
+    db.add(task)
+    db.flush()
     db.add_all(
         [
-            task,
             execution_snapshot,
             TaskEvent(
                 task_id=task_id,

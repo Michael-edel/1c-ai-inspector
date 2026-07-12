@@ -156,6 +156,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 settings,
                 OpenAICompatibleAdapter(settings),
                 retrieval.context,
+                retrieval.calls,
             )
             validate_transition(TaskStatus.RUNNING.value, report.status)
             task.status = report.status

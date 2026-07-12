@@ -30,16 +30,18 @@ class OpenAICompatibleAdapter:
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         url = f"{str(self.settings.model_api_url).rstrip('/')}/chat/completions"
         try:
+            payload = {
+                "model": self.settings.model_name,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+            }
+            if not self.settings.model_name.lower().startswith("gpt-5"):
+                payload["temperature"] = 0
             with httpx.Client(timeout=self.settings.task_timeout_sec, transport=self.transport) as client:
                 response = client.post(
                     url,
                     headers={"Authorization": f"Bearer {self.settings.model_api_key}"},
-                    json={
-                        "model": self.settings.model_name,
-                        "messages": messages,
-                        "temperature": 0,
-                        "response_format": {"type": "json_object"},
-                    },
+                    json=payload,
                 )
                 response.raise_for_status()
                 body = response.json()

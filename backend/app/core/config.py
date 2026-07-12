@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
 
+from typing import Literal
+
 from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +18,8 @@ class Settings(BaseSettings):
     database_url: PostgresDsn
     migration_database_url: PostgresDsn
     mcp_server_url: AnyHttpUrl
+    mcp_transport: Literal["streamable-http", "bridge"] = "streamable-http"
+    mcp_bridge_token: str | None = None
     mcp_projects_tool: str | None = None
     model_provider: str = "openai"
     model_name: str = "gpt-5.5"

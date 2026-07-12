@@ -66,7 +66,12 @@ def diagnostics(request: Request) -> dict[str, object]:
 
 @router.get("/mcp/health")
 async def mcp_health(request: Request) -> dict[str, object]:
-    connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
+    connector = McpConnector(
+        str(request.app.state.settings.mcp_server_url),
+        request.app.state.policy_snapshot,
+        transport_mode=request.app.state.settings.mcp_transport,
+        access_token=request.app.state.settings.mcp_bridge_token,
+    )
     try:
         result = await connector.initialize()
     except (httpx.HTTPError, PolicyError, ValueError, RuntimeError) as exc:
@@ -80,7 +85,12 @@ async def mcp_health(request: Request) -> dict[str, object]:
 async def discover_mcp_tools(
     request: Request, db: Session = Depends(get_db)
 ) -> dict[str, object]:
-    connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
+    connector = McpConnector(
+        str(request.app.state.settings.mcp_server_url),
+        request.app.state.policy_snapshot,
+        transport_mode=request.app.state.settings.mcp_transport,
+        access_token=request.app.state.settings.mcp_bridge_token,
+    )
     try:
         tools = await connector.discover_tools()
         McpDiscoveryService(

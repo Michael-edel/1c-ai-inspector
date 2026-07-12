@@ -12,6 +12,8 @@ def build_diagnostics(settings: Settings, snapshot: PolicySnapshot) -> dict[str,
     return {
         "mcp": {
             "endpointConfigured": bool(str(settings.mcp_server_url).strip()),
+            "transport": settings.mcp_transport,
+            "bridgeTokenConfigured": bool(settings.mcp_bridge_token),
             "policyTools": len(snapshot.published_tools),
             "projectsToolConfigured": bool(settings.mcp_projects_tool),
         },

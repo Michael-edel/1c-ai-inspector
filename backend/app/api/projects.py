@@ -33,7 +33,12 @@ async def sync_project_list(request: Request, db: Session = Depends(get_db)) -> 
     tool_name = request.app.state.settings.mcp_projects_tool
     if not tool_name:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Project sync is not configured")
-    connector = McpConnector(str(request.app.state.settings.mcp_server_url), request.app.state.policy_snapshot)
+    connector = McpConnector(
+        str(request.app.state.settings.mcp_server_url),
+        request.app.state.policy_snapshot,
+        transport_mode=request.app.state.settings.mcp_transport,
+        access_token=request.app.state.settings.mcp_bridge_token,
+    )
     try:
         count = await sync_projects(
             db,

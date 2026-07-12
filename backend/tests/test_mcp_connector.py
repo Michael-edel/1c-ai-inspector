@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.mcp.connector import McpConnector, ToolNotAllowedError
+from app.mcp.contracts import ToolContract
 from app.mcp.policy import PolicyProvider
 
 
@@ -133,6 +134,43 @@ def test_read_only_tool_retries_transient_http_failure(tmp_path: Path) -> None:
 
     assert asyncio.run(scenario()) == {"content": []}
     assert calls == 2
+
+
+def test_bridge_transport_uses_rest_endpoints_and_bearer_token(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.headers["Authorization"] == "Bearer bridge-secret"
+        if request.url.path == "/health":
+            return httpx.Response(200, json={"status": "ok", "tools_count": 1})
+        if request.url.path == "/tools":
+            return httpx.Response(200, json={"tools": [{"name": "Read Module.Source"}]})
+        body = json.loads(request.content)
+        assert request.url.path == "/tools/call"
+        assert body == {"name": "Read Module.Source", "arguments": {"object": "Catalog.X"}}
+        return httpx.Response(200, json={"tool": body["name"], "result": {"content": []}})
+
+    async def scenario() -> tuple[list[ToolContract], dict[str, object]]:
+        connector = McpConnector(
+            "http://bridge.test",
+            _policy(tmp_path),
+            transport=httpx.MockTransport(handler),
+            transport_mode="bridge",
+            access_token="bridge-secret",
+        )
+        try:
+            return (
+                await connector.discover_tools(),
+                await connector.call_tool("read_module_source", {"object": "Catalog.X"}),
+            )
+        finally:
+            await connector.close()
+
+    discovered, result = asyncio.run(scenario())
+    assert [tool.name for tool in discovered] == ["read_module_source"]
+    assert result == {"content": []}
+    assert [request.url.path for request in requests] == ["/health", "/tools", "/tools/call"]
 
 
 def test_unknown_tool_is_rejected_before_http(tmp_path: Path) -> None:

@@ -18,10 +18,14 @@ class McpConnector:
         endpoint_url: str,
         policy: PolicySnapshot,
         transport: httpx.AsyncBaseTransport | None = None,
+        transport_mode: str = "streamable-http",
+        access_token: str | None = None,
     ):
         self.endpoint_url = endpoint_url.rstrip("/")
         self.policy = policy
         self.transport = transport
+        self.transport_mode = transport_mode
+        self.access_token = access_token
         self._client: httpx.AsyncClient | None = None
         self._request_id = 0
         self._session_id: str | None = None
@@ -31,6 +35,10 @@ class McpConnector:
     async def initialize(self) -> dict[str, Any]:
         if self._initialized:
             return {}
+        if self.transport_mode == "bridge":
+            result = await self._bridge_request("GET", "/health")
+            self._initialized = True
+            return result
         result = await self._request(
             "initialize",
             {
@@ -48,6 +56,9 @@ class McpConnector:
         return result
 
     async def list_tools(self) -> dict[str, Any]:
+        if self.transport_mode == "bridge":
+            await self.initialize()
+            return await self._bridge_request("GET", "/tools")
         await self.initialize()
         return await self._request("tools/list", {})
 
@@ -76,6 +87,10 @@ class McpConnector:
         await self.initialize()
         for attempt in range(contract.retries + 1):
             try:
+                if self.transport_mode == "bridge":
+                    return await self._bridge_request(
+                        "POST", "/tools/call", {"name": contract.original_name, "arguments": arguments}
+                    )
                 return await self._request(
                     "tools/call", {"name": contract.original_name, "arguments": arguments}
                 )
@@ -100,6 +115,28 @@ class McpConnector:
         if "error" in body:
             raise RuntimeError(f"MCP request failed: {body['error']}")
         return body.get("result", {})
+
+    async def _bridge_request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=30, transport=self.transport)
+        headers = {"Accept": "application/json"}
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        response = await self._client.request(
+            method,
+            f"{self.endpoint_url}{path}",
+            json=payload,
+            headers=headers,
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise RuntimeError("MCP bridge response is not an object")
+        if "error" in body:
+            raise RuntimeError(f"MCP bridge request failed: {body['error']}")
+        return body.get("result", body)
 
     @staticmethod
     def _decode_response(response: httpx.Response) -> dict[str, Any]:

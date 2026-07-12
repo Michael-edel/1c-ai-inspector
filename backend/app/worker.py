@@ -100,7 +100,12 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         try:
             request = json.loads(request_json)
             async def run_retrieval():
-                connector = McpConnector(str(settings.mcp_server_url), snapshot)
+                connector = McpConnector(
+                    str(settings.mcp_server_url),
+                    snapshot,
+                    transport_mode=settings.mcp_transport,
+                    access_token=settings.mcp_bridge_token,
+                )
                 try:
                     return await retrieve_task_context(
                         request,

@@ -15,6 +15,7 @@ from app.services.patch_workflow import (
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
+from app.services.auth import AuthError, issue_auth_token, verify_auth_token
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -158,3 +159,14 @@ def test_patch_validation_reports_source_and_file_gate_failures() -> None:
         "PATCH_FILE_TYPE_UNSUPPORTED",
         "PATCH_DIFF_COUNTS_EMPTY",
     }
+
+
+def test_auth_token_verifies_claims_and_rejects_tampering() -> None:
+    secret = "s" * 32
+    token = issue_auth_token("user-1", "maintainer", secret, ttl_seconds=60)
+    identity = verify_auth_token(token, secret, now=1)
+
+    assert identity.subject == "user-1"
+    assert identity.role == "maintainer"
+    with pytest.raises(AuthError, match="AUTH_TOKEN_INVALID"):
+        verify_auth_token(token + "x", secret, now=1)

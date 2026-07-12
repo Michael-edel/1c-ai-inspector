@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import PatchStatus
+from app.api.dependencies import require_identity
 from app.db.session import get_db
 from app.models import PatchEvent, PatchProposal, Project, Task
 from app.services.patch_audit import record_patch_event
@@ -26,6 +27,7 @@ from app.services.patch_workflow import (
 from app.services.patch_package import build_patch_package
 from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
+from app.services.auth import AuthContext
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -48,9 +50,7 @@ class PatchProposalCreateRequest(BaseModel):
 
 
 class PatchDecisionRequest(BaseModel):
-    actor: str = Field(min_length=1, max_length=128)
     note: str = Field(min_length=1, max_length=10_000)
-    role: Literal["reviewer", "maintainer", "owner"]
 
 
 class PatchSourceFileInput(BaseModel):
@@ -230,6 +230,7 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
 def approve_patch_proposal(
     proposal_id: str,
     payload: PatchDecisionRequest,
+    identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
@@ -238,19 +239,19 @@ def approve_patch_proposal(
     if proposal.source_validation_status != "valid" or proposal.validation_status != "valid":
         raise HTTPException(status_code=409, detail="PATCH_NOT_VALIDATED")
     try:
-        authorize_approval(payload.role)
+        authorize_approval(identity.role)
         proposal.status = approve_status(proposal.status)
     except PatchWorkflowError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    proposal.approved_by = payload.actor
+    proposal.approved_by = identity.subject
     proposal.approval_note = payload.note
-    proposal.decision_role = payload.role
+    proposal.decision_role = identity.role
     record_patch_event(
         db,
         proposal.id,
         "approved",
-        payload.actor,
-        {"note": payload.note, "role": payload.role, "applied": False},
+        identity.subject,
+        {"note": payload.note, "role": identity.role, "applied": False},
     )
     db.commit()
     return {
@@ -269,25 +270,26 @@ def approve_patch_proposal(
 def reject_patch_proposal(
     proposal_id: str,
     payload: PatchDecisionRequest,
+    identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     try:
-        authorize_rejection(payload.role)
+        authorize_rejection(identity.role)
         proposal.status = reject_status(proposal.status)
     except PatchWorkflowError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    proposal.approved_by = payload.actor
+    proposal.approved_by = identity.subject
     proposal.approval_note = payload.note
-    proposal.decision_role = payload.role
+    proposal.decision_role = identity.role
     record_patch_event(
         db,
         proposal.id,
         "rejected",
-        payload.actor,
-        {"note": payload.note, "role": payload.role, "applied": False},
+        identity.subject,
+        {"note": payload.note, "role": identity.role, "applied": False},
     )
     db.commit()
     return {
@@ -348,12 +350,16 @@ def get_patch_events(proposal_id: str, db: Session = Depends(get_db)) -> dict[st
 
 
 @router.get("/{proposal_id}/package")
-def download_patch_package(proposal_id: str, db: Session = Depends(get_db)) -> Response:
+def download_patch_package(
+    proposal_id: str,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> Response:
     proposal = db.get(PatchProposal, proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     package = build_patch_package(proposal)
-    record_patch_event(db, proposal.id, "package_exported", "system", {"applyAllowed": False})
+    record_patch_event(db, proposal.id, "package_exported", identity.subject, {"applyAllowed": False})
     db.commit()
     return Response(
         content=package,

@@ -1,6 +1,7 @@
 param(
     [string]$BaseUrl = "http://127.0.0.1:8000",
-    [string]$ProjectId
+    [string]$ProjectId,
+    [string]$AuthToken
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +18,9 @@ function Post-Api([string]$Path, [object]$Body = $null) {
     }
     Invoke-RestMethod @params
 }
+
+if (-not $AuthToken) { throw "AuthToken is required for v0.4 protected decisions" }
+$authHeaders = @{ Authorization = "Bearer $AuthToken" }
 
 $health = Get-Api "/health"
 if ($health.status -ne "ok") { throw "Backend health is not ok" }
@@ -65,11 +69,7 @@ if ($checkpoint.status -ne "checkpointed" -or $checkpoint.applied -ne $false -or
     throw "Logical checkpoint is invalid"
 }
 
-$decision = Post-Api "/api/v1/patch-proposals/$($proposal.id)/approve" @{
-    actor = "v02-acceptance"
-    role = "maintainer"
-    note = "Approval is recorded without applying the diff."
-}
+$decision = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/patch-proposals/$($proposal.id)/approve" -Headers $authHeaders -ContentType "application/json" -Body (@{ note = "Approval is recorded without applying the diff." } | ConvertTo-Json)
 if ($decision.status -ne "approved" -or $decision.applied -ne $false) {
     throw "Approval workflow is invalid"
 }
@@ -92,11 +92,7 @@ $rejectBody = @{
     })
 }
 $rejectProposal = Post-Api "/api/v1/patch-proposals" $rejectBody
-$rejection = Post-Api "/api/v1/patch-proposals/$($rejectProposal.id)/reject" @{
-    actor = "v02-acceptance"
-    role = "reviewer"
-    note = "Rejected without applying the diff."
-}
+$rejection = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/patch-proposals/$($rejectProposal.id)/reject" -Headers $authHeaders -ContentType "application/json" -Body (@{ note = "Rejected without applying the diff." } | ConvertTo-Json)
 if ($rejection.status -ne "rejected" -or $rejection.applied -ne $false) {
     throw "Rejection workflow is invalid"
 }

@@ -20,6 +20,8 @@ Read-only web-приложение для анализа кода 1С через
 
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 
+Approve, reject и package download требуют signed Bearer token из `INSPECTOR_AUTH_SECRET`. Subject и role берутся из проверенной подписи, а не из request body; роли `maintainer` и `owner` могут approve, `reviewer` может reject. Токен не выводится в UI или audit.
+
 Первый срез реализует технический фундамент:
 
 - FastAPI и Python 3.13;
@@ -54,6 +56,8 @@ Copy-Item .env.example .env
 notepad .env
 docker compose --env-file .env up --build
 ```
+
+Для защищенных approval/package endpoint задайте в `.env` случайный `INSPECTOR_AUTH_SECRET` длиной не менее 32 символов. Signed Bearer tokens должен выпускать внешний issuer или gateway; Inspector только проверяет подпись и expiry.
 
 После запуска откройте `http://localhost:5173`. Панель показывает readiness, проекты из PostgreSQL, policy/toolset checksums, registry агентов, запускает MCP discovery и позволяет просматривать audit/report созданной task.
 
@@ -92,7 +96,7 @@ Live acceptance после настройки `.env` запускается ко
 Финальную приемку v0.3 запускайте при работающем Compose:
 
 ```powershell
-.\scripts\v03-acceptance.ps1
+.\scripts\v03-acceptance.ps1 -AuthToken <signed-token>
 ```
 
 Скрипт проверяет read-only impact evidence, source revalidation, validation-gates, checkpoint, role policy, ZIP package и полный audit log. Весь контур остается proposal-only.
@@ -119,7 +123,7 @@ Task Orchestrator не создаёт агентную задачу, если to
 
 Patch Planner в v0.3 сохраняет proposal-only режим: после создания diff нужно выполнить source revalidation, затем можно построить candidate impact и логический checkpoint. Ни один endpoint этого среза не применяет код, не меняет конфигурацию 1С и не создает Git-коммиты.
 
-Роль из request пока является policy claim и сохраняется в audit; полноценная проверка личности/SSO/RBAC находится за пределами v0.3 и должна быть добавлена перед production approval.
+Текущий signed-token слой заменяет self-claimed role, но не является SSO/IdP: перед production нужно подключить внешний issuer или корпоративный gateway, который будет выпускать эти claims.
 
 Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.

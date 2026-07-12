@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     mcp_policy_path: Path = Path("/app/mcp_policy.yaml")
     prompts_path: Path = Path("/app/prompts")
     app_environment: str = "sandbox"
+    inspector_auth_secret: str | None = Field(default=None, min_length=32)
 
     @field_validator("app_environment")
     @classmethod

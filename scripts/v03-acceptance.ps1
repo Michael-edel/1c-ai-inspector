@@ -1,6 +1,7 @@
 param(
     [string]$BaseUrl = "http://127.0.0.1:8000",
-    [string]$ProjectId
+    [string]$ProjectId,
+    [string]$AuthToken
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +18,9 @@ function Post-Api([string]$Path, [object]$Body = $null) {
     }
     Invoke-RestMethod @params
 }
+
+if (-not $AuthToken) { throw "AuthToken is required for v0.4 protected decisions" }
+$authHeaders = @{ Authorization = "Bearer $AuthToken" }
 
 $health = Get-Api "/health"
 if ($health.status -ne "ok") { throw "Backend health is not ok" }
@@ -69,22 +73,18 @@ if ($checkpoint.status -ne "checkpointed" -or $checkpoint.applied -ne $false) {
 
 $reviewerBody = @{ actor = "v03-acceptance-reviewer"; role = "reviewer"; note = "Reviewer cannot approve." }
 try {
-    Post-Api "/api/v1/patch-proposals/$($proposal.id)/approve" $reviewerBody | Out-Null
+    $null = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/patch-proposals/$($proposal.id)/approve" -Headers $authHeaders -ContentType "application/json" -Body ($reviewerBody | ConvertTo-Json)
     throw "Reviewer unexpectedly approved proposal"
 } catch {
     if ($_.Exception.Response.StatusCode.value__ -ne 409) { throw }
 }
 
-$approval = Post-Api "/api/v1/patch-proposals/$($proposal.id)/approve" @{
-    actor = "v03-acceptance-maintainer"
-    role = "maintainer"
-    note = "Approved for workflow acceptance only; no apply operation exists."
-}
+$approval = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/patch-proposals/$($proposal.id)/approve" -Headers $authHeaders -ContentType "application/json" -Body (@{ note = "Approved for workflow acceptance only; no apply operation exists." } | ConvertTo-Json)
 if ($approval.status -ne "approved" -or $approval.applied -ne $false) {
     throw "Approval is invalid"
 }
 
-$package = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/api/v1/patch-proposals/$($proposal.id)/package"
+$package = Invoke-WebRequest -UseBasicParsing -Uri "$BaseUrl/api/v1/patch-proposals/$($proposal.id)/package" -Headers $authHeaders
 if ($package.StatusCode -ne 200 -or $package.Headers["Content-Type"] -notlike "application/zip*") {
     throw "Proposal package response is invalid"
 }
@@ -102,11 +102,7 @@ $rejected = Post-Api "/api/v1/patch-proposals" @{
     summary = "Reviewer rejection flow"
     files = @(@{ path = "CommonModules/Rejection.bsl"; original = "A`n"; proposed = "B`n" })
 }
-$rejection = Post-Api "/api/v1/patch-proposals/$($rejected.id)/reject" @{
-    actor = "v03-acceptance-reviewer"
-    role = "reviewer"
-    note = "Rejected without applying the diff."
-}
+$rejection = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/patch-proposals/$($rejected.id)/reject" -Headers $authHeaders -ContentType "application/json" -Body (@{ note = "Rejected without applying the diff." } | ConvertTo-Json)
 if ($rejection.status -ne "rejected" -or $rejection.applied -ne $false) {
     throw "Reviewer rejection is invalid"
 }

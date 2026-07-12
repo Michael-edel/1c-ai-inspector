@@ -81,8 +81,8 @@ Invoke-RestMethod http://localhost:8000/api/v1/system/policy
 Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 ```
 
-Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.scriptsacceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test. Offline acceptance-тест отдельно проходит mock MCP -> project sync -> retrieval -> report контур и не заменяет live EDT/MODEL E2E.
-Live acceptance после настройки `.env` запускается командой `.scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery, bridge tool smoke call и project sync, а при placeholder-конфигурации перечисляет все отсутствующие ключи. Docker preflight завершается с timeout, если daemon не отвечает.
+Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.\scripts\acceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test. Offline acceptance-тест отдельно проходит mock MCP -> project sync -> retrieval -> report контур и не заменяет live EDT/MODEL E2E.
+Live acceptance после настройки `.env` запускается командой `.\scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery, bridge tool smoke call и project sync, а при placeholder-конфигурации перечисляет все отсутствующие ключи. Docker preflight завершается с timeout, если daemon не отвечает.
 Финальную приемку v0.1 с проверкой готовности, project sync, read-only toolset и конкретных task reports запускайте так:
 
 ```powershell
@@ -117,6 +117,14 @@ Live acceptance после настройки `.env` запускается ко
 ```
 
 Скрипт проверяет signed auth, автоматический MCP evidence, policy для candidate risk, signed package и server-side verify. Токены и секреты не печатаются.
+
+Финальную приемку v0.5 запускайте при работающем Compose с maintainer и owner tokens:
+
+```powershell
+.\scripts\v05-acceptance.ps1 -AuthToken <maintainer-token> -OwnerToken <owner-token>
+```
+
+Скрипт проверяет auth, automatic MCP evidence, immutable package version `1`, explicit version download, metrics authorization, final-state conflict и owner-only candidate policy. Он не применяет diff и не меняет конфигурацию 1С.
 
 Тесты без Docker:
 

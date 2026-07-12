@@ -52,6 +52,16 @@ Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 
 Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.scriptsacceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test. Offline acceptance-тест отдельно проходит mock MCP -> project sync -> retrieval -> report контур и не заменяет live EDT/MODEL E2E.
 Live acceptance после настройки `.env` запускается командой `.scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery, bridge tool smoke call и project sync, а при placeholder-конфигурации перечисляет все отсутствующие ключи. Docker preflight завершается с timeout, если daemon не отвечает.
+Финальную приемку v0.1 с проверкой готовности, project sync, read-only toolset и конкретных task reports запускайте так:
+
+```powershell
+.\scripts\v01-acceptance.ps1 `
+  -CodeTaskId <code-task-id> `
+  -QueryTaskId <query-task-id> `
+  -AuditTaskId <audit-task-id>
+```
+
+Скрипт отклоняет `execute_query`, write tools и findings без evidence.
 
 Тесты без Docker:
 

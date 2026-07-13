@@ -1,3 +1,4 @@
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -20,6 +21,28 @@ class RetrievalError(ValueError):
 class RetrievalResult:
     context: list[dict[str, Any]]
     calls: list[dict[str, Any]]
+
+
+def _compact_search_output(output: Any, query: str, category: Any, module: Any) -> Any:
+    if not isinstance(output, dict) or not isinstance(query, str) or not query.strip():
+        return output
+    if not isinstance(category, str) or not isinstance(module, str):
+        return output
+    content = output.get("content")
+    if not isinstance(content, list):
+        return output
+
+    needle = query.strip().casefold()
+    compacted: list[Any] = []
+    for item in content:
+        if not isinstance(item, dict) or not isinstance(item.get("text"), str):
+            compacted.append(item)
+            continue
+        text = item["text"]
+        sections = re.split(r"(?=^### )", text, flags=re.MULTILINE)
+        matches = [section.strip() for section in sections if section.startswith("### ") and needle in section.splitlines()[0].casefold()]
+        compacted.append({**item, "text": "\n\n".join(matches) if matches else text})
+    return {**output, "content": compacted}
 
 
 async def retrieve_task_context(
@@ -62,12 +85,18 @@ async def retrieve_task_context(
                 "durationMs": int((time.perf_counter() - started) * 1000),
             })
             raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
+        compacted_output = _compact_search_output(
+            output,
+            arguments.get("query", ""),
+            arguments.get("category"),
+            arguments.get("module"),
+        ) if tool_name == "search_code" else output
         calls.append({
             "toolName": tool_name,
             "input": arguments,
-            "output": output,
+            "output": compacted_output,
             "status": "completed",
             "durationMs": int((time.perf_counter() - started) * 1000),
         })
-        context.append({"source": "MCP", "tool": tool_name, "data": output})
+        context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
     return RetrievalResult(context=context, calls=calls)

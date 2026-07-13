@@ -8,7 +8,7 @@ import pytest
 from app.agents.registry import AgentRegistry
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
-from app.services.retrieval import RetrievalError, retrieve_task_context
+from app.services.retrieval import RetrievalError, _compact_search_output, retrieve_task_context
 
 
 def _snapshot(tmp_path: Path):
@@ -98,3 +98,21 @@ def test_failed_mcp_call_keeps_audit_record(tmp_path: Path) -> None:
             )
         )
     assert error.value.calls[0]["status"] == "failed"
+
+
+def test_object_aware_search_context_keeps_matching_modules() -> None:
+    output = {
+        "content": [
+            {
+                "type": "text",
+                "text": "## Results\n### Документ.Другой.МодульОбъекта (строка 1)\n```bsl\nA\n```\n"
+                "### Документ.ЗаказКлиента.МодульОбъекта (строка 2)\n```bsl\nB\n```",
+            }
+        ]
+    }
+
+    compacted = _compact_search_output(output, "ЗаказКлиента", "Документ", "МодульОбъекта")
+
+    text = compacted["content"][0]["text"]
+    assert "Документ.ЗаказКлиента.МодульОбъекта" in text
+    assert "Документ.Другой.МодульОбъекта" not in text

@@ -194,7 +194,7 @@ Patch Planner в v0.4 сохраняет proposal-only режим: после с
 
 Signed-режим оставлен для локальной разработки. Для production используйте внешний IdP или корпоративный gateway в режиме JWKS; Inspector принимает только JWT с поддержанным RSA-алгоритмом и проверяет подпись до извлечения роли.
 
-Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit.
+Agent retrieval принимает только явный `request.retrieval` plan. Каждый шаг проверяется по опубликованному read-only tool и capability конкретного агента, результат маркируется как untrusted MCP context, а вызов попадает в `tool_calls` audit. Для object-aware `search_code` backend оставляет в контексте только совпадающие заголовки модулей, чтобы большой результат поиска не вытеснял полезный код за пределы model context.
 Количество retrieval calls ограничивается `MAX_TOOL_CALLS` до первого сетевого вызова.
 Даже failed MCP calls сохраняются в `tool_calls` с `status=failed` и безопасным `errorCode`.
 Для read-only tools policy может задать ограниченное число повторов через `retries`; повторяются только transport/HTTP ошибки.

@@ -120,16 +120,13 @@ def _source_for_evidence(
     return None
 
 
-def _source_range_is_valid(source: str, evidence: Any) -> bool:
+def _source_range_bounds_are_valid(source: str, evidence: Any) -> bool:
     if evidence.line_start is None or evidence.line_end is None:
         return False
     lines = source.splitlines()
     if evidence.line_start > evidence.line_end or evidence.line_end > len(lines):
         return False
-    return not evidence.excerpt or _excerpt_matches(
-        evidence.excerpt,
-        "\n".join(lines[evidence.line_start - 1 : evidence.line_end]),
-    )
+    return True
 
 
 def _validate_source_evidence(
@@ -140,6 +137,7 @@ def _validate_source_evidence(
         return report
     valid_findings = []
     invalid_count = 0
+    excerpt_count = 0
     dropped_count = 0
     for finding in report.findings:
         valid_evidence = []
@@ -148,26 +146,35 @@ def _validate_source_evidence(
                 valid_evidence.append(evidence)
                 continue
             source = _source_for_evidence(documents, finding, evidence)
-            if source is not None and _source_range_is_valid(source, evidence):
-                valid_evidence.append(evidence)
-            else:
+            if source is None or not _source_range_bounds_are_valid(source, evidence):
                 invalid_count += 1
+                continue
+            if evidence.excerpt:
+                lines = source.splitlines()
+                source_window = "\n".join(lines[evidence.line_start - 1 : evidence.line_end])
+                if not _excerpt_matches(evidence.excerpt, source_window):
+                    valid_evidence.append(evidence.model_copy(update={"excerpt": None}))
+                    excerpt_count += 1
+                    continue
+            valid_evidence.append(evidence)
         if valid_evidence:
             valid_findings.append(finding.model_copy(update={"evidence": valid_evidence}))
         elif finding.evidence:
             dropped_count += 1
-    if invalid_count == 0:
+    if invalid_count == 0 and excerpt_count == 0:
         return report
     limitations = list(report.limitations)
-    limitations.append(
-        f"Сервер исключил неподтвержденные source_range evidence: {invalid_count}."
-    )
+    if invalid_count:
+        limitations.append(f"Сервер исключил неподтвержденные source_range evidence: {invalid_count}.")
+    if excerpt_count:
+        limitations.append(f"Сервер удалил неподтвержденные excerpts, сохранив проверенные диапазоны строк: {excerpt_count}.")
     next_actions = list(report.next_actions)
     next_actions.append("Повторить аудит после проверки диапазонов строк и excerpts по исходному модулю.")
     validation = dict(report.validation)
     validation["sourceEvidence"] = {
         "status": "filtered",
         "invalidCount": invalid_count,
+        "excerptCount": excerpt_count,
         "droppedFindings": dropped_count,
     }
     return report.model_copy(

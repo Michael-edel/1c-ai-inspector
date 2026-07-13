@@ -37,8 +37,9 @@ class SchemaCheckingAdapter(FakeAdapter):
 
 
 class SourceEvidenceAdapter(FakeAdapter):
-    def __init__(self, *, valid: bool):
+    def __init__(self, *, valid: bool, excerpt_valid: bool = True):
         self.valid = valid
+        self.excerpt_valid = excerpt_valid
 
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         payload = json.loads(messages[-1]["content"].split("Task envelope:\n", 1)[1])
@@ -63,7 +64,7 @@ class SourceEvidenceAdapter(FakeAdapter):
                     "module": "Документ.ЗаказКлиента.МодульОбъекта",
                     "lineStart": 99 if not self.valid else 2,
                     "lineEnd": 99 if not self.valid else 2,
-                    "excerpt": "А = 1;" if self.valid else "Неизвестный код",
+                    "excerpt": "А = 1;" if self.valid and self.excerpt_valid else "Неизвестный код",
                 }],
             }],
             "objectsReviewed": [],
@@ -222,29 +223,50 @@ def test_source_range_evidence_is_validated_against_full_source() -> None:
         )
         session.add(task)
         session.commit()
+        source_context = [{
+            "source": "MCP",
+            "tool": "read_source",
+            "data": {
+                "sourceComplete": True,
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "module": "Документ.ЗаказКлиента.МодульОбъекта",
+                        "source": "Процедура Тест()\nА = 1;\nКонецПроцедуры",
+                        "sourceComplete": True,
+                    }, ensure_ascii=False),
+                }],
+            },
+        }]
         report = execute_agent(
             session,
             task,
             AgentRegistry().get("1c_audit_agent"),
             get_settings(),
             SourceEvidenceAdapter(valid=True),
-            extra_context=[{
-                "source": "MCP",
-                "tool": "read_source",
-                "data": {
-                    "sourceComplete": True,
-                    "content": [{
-                        "type": "text",
-                        "text": json.dumps({
-                            "module": "Документ.ЗаказКлиента.МодульОбъекта",
-                            "source": "Процедура Тест()\nА = 1;\nКонецПроцедуры",
-                            "sourceComplete": True,
-                        }, ensure_ascii=False),
-                    }],
-                },
-            }],
+            extra_context=source_context,
         )
         assert report.source_coverage == "full"
+        task_sanitized = Task(
+            id="tsk_sanitized_source_evidence",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "audit"}),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task_sanitized)
+        session.commit()
+        sanitized = execute_agent(
+            session,
+            task_sanitized,
+            AgentRegistry().get("1c_audit_agent"),
+            get_settings(),
+            SourceEvidenceAdapter(valid=True, excerpt_valid=False),
+            extra_context=source_context,
+        )
+        assert sanitized.findings[0].evidence[0].excerpt is None
+        assert sanitized.validation["sourceEvidence"]["excerptCount"] == 1
 
 
 def test_invalid_source_range_evidence_is_filtered() -> None:

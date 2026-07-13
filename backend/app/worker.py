@@ -47,6 +47,14 @@ def recover_stale_tasks(session, lease_timeout_sec: int) -> int:
     return result.rowcount
 
 
+def task_allows_next_tool(session, task_id: str) -> bool:
+    try:
+        task = session.get(Task, task_id)
+        return task is not None and task.status == TaskStatus.RUNNING.value and not task.cancel_requested
+    finally:
+        session.rollback()
+
+
 def claim_next_task(session, lease_timeout_sec: int = 600):
     """Atomically claim one PostgreSQL task without double processing."""
     now = datetime.now(timezone.utc)
@@ -122,6 +130,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         snapshot,
                         connector,
                         settings.max_tool_calls,
+                        before_tool_call=lambda: task_allows_next_tool(session, task_id),
                     )
                 finally:
                     await connector.close()
@@ -141,6 +150,12 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                             call["durationMs"],
                             call.get("errorCode"),
                         )
+            if isinstance(exc, RetrievalError) and exc.code == "TASK_CANCELLED_BY_USER":
+                with session.begin():
+                    task = session.get(Task, task_id)
+                    if task is not None and task.status == TaskStatus.RUNNING.value:
+                        finalize_task_cancellation(session, task, actor="worker")
+                return True
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():
             task = session.get(Task, task_id)

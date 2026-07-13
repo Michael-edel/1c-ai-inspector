@@ -1,6 +1,7 @@
 import re
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from app.agents.registry import AgentDefinition
@@ -65,6 +66,7 @@ async def retrieve_task_context(
     snapshot: PolicySnapshot,
     connector: McpConnector,
     max_tool_calls: int = 30,
+    before_tool_call: Callable[[], bool] | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -86,6 +88,8 @@ async def retrieve_task_context(
             raise ToolNotAllowedError(f"MCP tool is not published: {tool_name}")
         if contract.category not in allowed_categories:
             raise RetrievalError("RETRIEVAL_CAPABILITY_NOT_ALLOWED")
+        if before_tool_call is not None and not before_tool_call():
+            raise RetrievalError("TASK_CANCELLED_BY_USER", calls)
         started = time.perf_counter()
         try:
             output = await connector.call_tool(tool_name, arguments)

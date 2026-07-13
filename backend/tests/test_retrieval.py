@@ -100,6 +100,43 @@ def test_failed_mcp_call_keeps_audit_record(tmp_path: Path) -> None:
     assert error.value.calls[0]["status"] == "failed"
 
 
+def test_retrieval_stops_before_next_tool_after_cancellation(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    tool_calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal tool_calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        tool_calls += 1
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"content": []}})
+
+    checks = 0
+
+    def before_tool_call() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks == 1
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": {}}, {"tool": "read_source", "arguments": {}}]},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                McpConnector("http://mcp.test", snapshot, transport=httpx.MockTransport(handler)),
+                before_tool_call=before_tool_call,
+            )
+        )
+
+    assert error.value.code == "TASK_CANCELLED_BY_USER"
+    assert len(error.value.calls) == 1
+    assert tool_calls == 1
+
+
 def test_object_aware_search_context_keeps_matching_modules() -> None:
     output = {
         "content": [

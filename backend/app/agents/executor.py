@@ -20,6 +20,15 @@ class AgentExecutionError(RuntimeError):
         self.code = code
 
 
+MODULE_ALIASES = {
+    "ObjectModule": "МодульОбъекта",
+    "ManagerModule": "МодульМенеджера",
+    "RecordSetModule": "МодульНабораЗаписей",
+    "CommandModule": "МодульКоманды",
+    "FormModule": "МодульФормы",
+}
+
+
 def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
     has_search_context = False
     for item in extra_context or []:
@@ -86,32 +95,89 @@ def _excerpt_matches(excerpt: str, source_window: str) -> bool:
     return True
 
 
+def _source_for_evidence(
+    documents: dict[str, str], finding: Any, evidence: Any
+) -> str | None:
+    module_names = [evidence.module]
+    alias = MODULE_ALIASES.get(evidence.module)
+    if alias:
+        module_names.append(alias)
+    candidates = list(module_names)
+    if finding.object_fqn:
+        candidates.extend(f"{finding.object_fqn}.{module}" for module in module_names)
+    for candidate in candidates:
+        if candidate in documents:
+            return documents[candidate]
+    matching = [
+        source
+        for module, source in documents.items()
+        if any(module.endswith(f".{candidate}") for candidate in candidates)
+    ]
+    if len(matching) == 1:
+        return matching[0]
+    if len(documents) == 1:
+        return next(iter(documents.values()))
+    return None
+
+
+def _source_range_is_valid(source: str, evidence: Any) -> bool:
+    if evidence.line_start is None or evidence.line_end is None:
+        return False
+    lines = source.splitlines()
+    if evidence.line_start > evidence.line_end or evidence.line_end > len(lines):
+        return False
+    return not evidence.excerpt or _excerpt_matches(
+        evidence.excerpt,
+        "\n".join(lines[evidence.line_start - 1 : evidence.line_end]),
+    )
+
+
 def _validate_source_evidence(
     report: StructuredReport, extra_context: list[dict[str, object]] | None
-) -> None:
+) -> StructuredReport:
     documents = _source_documents(extra_context)
     if not documents:
-        return
+        return report
+    valid_findings = []
+    invalid_count = 0
+    dropped_count = 0
     for finding in report.findings:
+        valid_evidence = []
         for evidence in finding.evidence:
             if evidence.type != "source_range":
+                valid_evidence.append(evidence)
                 continue
-            candidates = [evidence.module]
-            if finding.object_fqn:
-                candidates.append(f"{finding.object_fqn}.{evidence.module}")
-            source = next((documents.get(candidate) for candidate in candidates if candidate in documents), None)
-            if source is None:
-                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
-            if evidence.line_start is None or evidence.line_end is None:
-                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
-            lines = source.splitlines()
-            if evidence.line_start > evidence.line_end or evidence.line_end > len(lines):
-                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
-            if evidence.excerpt and not _excerpt_matches(
-                evidence.excerpt,
-                "\n".join(lines[evidence.line_start - 1 : evidence.line_end]),
-            ):
-                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
+            source = _source_for_evidence(documents, finding, evidence)
+            if source is not None and _source_range_is_valid(source, evidence):
+                valid_evidence.append(evidence)
+            else:
+                invalid_count += 1
+        if valid_evidence:
+            valid_findings.append(finding.model_copy(update={"evidence": valid_evidence}))
+        elif finding.evidence:
+            dropped_count += 1
+    if invalid_count == 0:
+        return report
+    limitations = list(report.limitations)
+    limitations.append(
+        f"Сервер исключил неподтвержденные source_range evidence: {invalid_count}."
+    )
+    next_actions = list(report.next_actions)
+    next_actions.append("Повторить аудит после проверки диапазонов строк и excerpts по исходному модулю.")
+    validation = dict(report.validation)
+    validation["sourceEvidence"] = {
+        "status": "filtered",
+        "invalidCount": invalid_count,
+        "droppedFindings": dropped_count,
+    }
+    return report.model_copy(
+        update={
+            "findings": valid_findings,
+            "limitations": limitations,
+            "next_actions": next_actions,
+            "validation": validation,
+        }
+    )
 
 
 def execute_agent(
@@ -166,7 +232,7 @@ def execute_agent(
 
     if report.task_id != task.id:
         raise AgentExecutionError("MODEL_REPORT_TASK_MISMATCH")
-    _validate_source_evidence(report, extra_context)
+    report = _validate_source_evidence(report, extra_context)
     source_coverage = _source_coverage(extra_context)
     limitations = list(report.limitations)
     next_actions = list(report.next_actions)

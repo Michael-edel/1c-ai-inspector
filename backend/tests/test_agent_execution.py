@@ -1,11 +1,10 @@
 import json
 from datetime import datetime, timezone
 
-import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.agents.executor import AgentExecutionError, execute_agent
+from app.agents.executor import execute_agent
 from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.modeling import ModelResult
@@ -248,7 +247,7 @@ def test_source_range_evidence_is_validated_against_full_source() -> None:
         assert report.source_coverage == "full"
 
 
-def test_invalid_source_range_evidence_is_rejected() -> None:
+def test_invalid_source_range_evidence_is_filtered() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as session:
@@ -262,26 +261,28 @@ def test_invalid_source_range_evidence_is_rejected() -> None:
         )
         session.add(task)
         session.commit()
-        with pytest.raises(AgentExecutionError, match="MODEL_EVIDENCE_INVALID"):
-            execute_agent(
-                session,
-                task,
-                AgentRegistry().get("1c_audit_agent"),
-                get_settings(),
-                SourceEvidenceAdapter(valid=False),
-                extra_context=[{
-                    "source": "MCP",
-                    "tool": "read_source",
-                    "data": {
-                        "sourceComplete": True,
-                        "content": [{
-                            "type": "text",
-                            "text": json.dumps({
-                                "module": "Документ.ЗаказКлиента.МодульОбъекта",
-                                "source": "Процедура Тест()\nА = 1;\nКонецПроцедуры",
-                                "sourceComplete": True,
-                            }, ensure_ascii=False),
-                        }],
-                    },
-                }],
-            )
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_audit_agent"),
+            get_settings(),
+            SourceEvidenceAdapter(valid=False),
+            extra_context=[{
+                "source": "MCP",
+                "tool": "read_source",
+                "data": {
+                    "sourceComplete": True,
+                    "content": [{
+                        "type": "text",
+                        "text": json.dumps({
+                            "module": "Документ.ЗаказКлиента.МодульОбъекта",
+                            "source": "Процедура Тест()\nА = 1;\nКонецПроцедуры",
+                            "sourceComplete": True,
+                        }, ensure_ascii=False),
+                    }],
+                },
+            }],
+        )
+        assert report.findings == []
+        assert any("неподтвержденные" in item for item in report.limitations)
+        assert report.validation["sourceEvidence"]["invalidCount"] == 1

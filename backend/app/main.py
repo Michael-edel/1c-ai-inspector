@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 from time import perf_counter
 from uuid import uuid4
 
+import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.agents import router as agents_router
 from app.api.projects import router as projects_router
@@ -13,8 +16,48 @@ from app.api.system import router as system_router
 from app.api.tasks import router as tasks_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.db.session import get_session_factory
+from app.mcp.connector import McpConnector
+from app.mcp.policy import PolicyError
 from app.mcp.policy import PolicyProvider
 from app.services.jwks_auth import JwksProvider
+from app.services.mcp_discovery import McpDiscoveryService
+
+
+async def _auto_discover_mcp(app: FastAPI) -> None:
+    settings = app.state.settings
+    logger = logging.getLogger("app.mcp")
+    for attempt in range(1, 4):
+        connector = McpConnector(
+            str(settings.mcp_server_url),
+            app.state.policy_snapshot,
+            transport_mode=settings.mcp_transport,
+            access_token=settings.mcp_bridge_token,
+        )
+        try:
+            tools = await connector.discover_tools()
+            with get_session_factory()() as db:
+                McpDiscoveryService(
+                    db,
+                    app.state.policy_snapshot,
+                    str(settings.mcp_server_url),
+                ).persist(tools)
+            app.state.discovered_tools = {tool.name: tool for tool in tools}
+            logger.info(
+                "mcp_auto_discovery_succeeded",
+                extra={"fields": {"tools": len(tools), "attempt": attempt}},
+            )
+            return
+        except (httpx.HTTPError, PolicyError, ValueError, RuntimeError, SQLAlchemyError):
+            logger.warning(
+                "mcp_auto_discovery_failed",
+                extra={"fields": {"attempt": attempt}},
+            )
+        finally:
+            await connector.close()
+        await asyncio.sleep(min(2**attempt, 5))
+
+    logger.warning("mcp_auto_discovery_unavailable")
 
 
 @asynccontextmanager
@@ -28,7 +71,12 @@ async def lifespan(app: FastAPI):
         if settings.auth_jwks_url
         else None
     )
-    yield
+    discovery_task = asyncio.create_task(_auto_discover_mcp(app))
+    try:
+        yield
+    finally:
+        discovery_task.cancel()
+        await asyncio.gather(discovery_task, return_exceptions=True)
 
 
 app = FastAPI(title="1C AI Inspector", version="0.6.0", lifespan=lifespan)

@@ -40,8 +40,22 @@ def _compact_search_output(output: Any, query: str, category: Any, module: Any) 
             continue
         text = item["text"]
         sections = re.split(r"(?=^### )", text, flags=re.MULTILINE)
-        matches = [section.strip() for section in sections if section.startswith("### ") and needle in section.splitlines()[0].casefold()]
-        compacted.append({**item, "text": "\n\n".join(matches) if matches else text})
+        matches = []
+        for section in sections:
+            if not section.startswith("### "):
+                continue
+            header = section.splitlines()[0].casefold()
+            if needle not in header:
+                continue
+            if isinstance(category, str) and isinstance(module, str):
+                if category.casefold() not in header or module.casefold() not in header:
+                    continue
+            matches.append(section.strip())
+        if isinstance(category, str) and isinstance(module, str):
+            compacted_text = "\n\n".join(matches)
+        else:
+            compacted_text = "\n\n".join(matches) if matches else text
+        compacted.append({**item, "text": compacted_text})
     return {**output, "content": compacted}
 
 

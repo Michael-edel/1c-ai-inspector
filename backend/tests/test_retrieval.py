@@ -116,3 +116,19 @@ def test_object_aware_search_context_keeps_matching_modules() -> None:
     text = compacted["content"][0]["text"]
     assert "Документ.ЗаказКлиента.МодульОбъекта" in text
     assert "Документ.Другой.МодульОбъекта" not in text
+
+
+def test_object_aware_search_context_does_not_leak_other_documents() -> None:
+    output = {
+        "content": [{
+            "type": "text",
+            "text": "## Results\n### Документ.АктВыполненныхРабот.МодульОбъекта (строка 274)\n```bsl\nЗаказКлиента\n```\n"
+            "### Документ.ЗаказКлиента.МодульОбъекта (строка 12)\n```bsl\nЗаказКлиента\n```",
+        }]
+    }
+
+    compacted = _compact_search_output(output, "ЗаказКлиента", "Документ", "МодульОбъекта")
+
+    text = compacted["content"][0]["text"]
+    assert "Документ.ЗаказКлиента.МодульОбъекта" in text
+    assert "Документ.АктВыполненныхРабот.МодульОбъекта" not in text

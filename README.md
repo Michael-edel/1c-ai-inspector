@@ -78,7 +78,7 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 Object-aware audit распознаёт русские формы объектов (`документ`, `документа`, `справочник`, `регистр`) и извлекает имя вроде `ЗаказКлиента` перед построением точного retrieval plan.
 
-Кнопка `LOAD REPORT` загружает подробный human-readable report под блоком `Execution audit`: summary, severity, объект, модуль, строки, risk, recommendation и evidence каждого finding. Поля `persistedFindings` берутся из сохранённых записей PostgreSQL, поэтому UI показывает канонический результат после worker, а не только исходный ответ модели.
+Блок `Execution audit` показывает список фактических MCP tool calls с режимом, статусом, длительностью и безопасным кодом ошибки. Кнопка `LOAD REPORT` загружает подробный human-readable report под этим блоком: summary, severity, объект, модуль, строки, risk, recommendation и evidence каждого finding. Поля `persistedFindings` берутся из сохранённых записей PostgreSQL, поэтому UI показывает канонический результат после worker, а не только исходный ответ модели.
 
 Проверка:
 

@@ -37,11 +37,14 @@ class SchemaCheckingAdapter(FakeAdapter):
 
 
 class SourceEvidenceAdapter(FakeAdapter):
-    def __init__(self, *, valid: bool, excerpt_valid: bool = True):
+    def __init__(self, *, valid: bool, excerpt_valid: bool = True, require_source_limits: bool = False):
         self.valid = valid
         self.excerpt_valid = excerpt_valid
+        self.require_source_limits = require_source_limits
 
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
+        if self.require_source_limits:
+            assert "Full source line limits:" in messages[0]["content"]
         payload = json.loads(messages[-1]["content"].split("Task envelope:\n", 1)[1])
         report = {
             "taskId": payload["taskId"],
@@ -243,7 +246,7 @@ def test_source_range_evidence_is_validated_against_full_source() -> None:
             task,
             AgentRegistry().get("1c_audit_agent"),
             get_settings(),
-            SourceEvidenceAdapter(valid=True),
+            SourceEvidenceAdapter(valid=True, require_source_limits=True),
             extra_context=source_context,
         )
         assert report.source_coverage == "full"

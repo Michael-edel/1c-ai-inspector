@@ -72,7 +72,10 @@ def test_execution_limits_have_safe_defaults_and_reject_zero() -> None:
 
     assert settings.max_result_chars == 500_000
     assert settings.max_findings == 100
+    assert settings.max_methods_read == 10
     with pytest.raises(ValidationError):
         make_settings(max_result_chars=0)
     with pytest.raises(ValidationError):
         make_settings(max_findings=0)
+    with pytest.raises(ValidationError):
+        make_settings(max_methods_read=0)

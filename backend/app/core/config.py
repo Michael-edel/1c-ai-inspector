@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     max_result_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)
     max_findings: int = Field(default=100, ge=1, le=1_000)
+    max_methods_read: int = Field(default=10, ge=1, le=1_000)
     max_request_bytes: int = Field(default=12_000_000, ge=64_000, le=50_000_000)
     task_timeout_sec: int = Field(default=300, ge=1, le=86_400)
     worker_heartbeat_interval_sec: int = Field(default=15, ge=1, le=300)

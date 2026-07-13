@@ -291,6 +291,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         on_tool_call=lambda call: persist_tool_call(session, task_id, call, lease_owner),
                         deadline=task_deadline,
                         max_result_chars=settings.max_result_chars,
+                        max_methods_read=settings.max_methods_read,
                     )
                 finally:
                     await connector.close()
@@ -310,6 +311,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 "TASK_TIMEOUT",
                 "MCP_RESULT_TOO_LARGE",
                 "MCP_TOOL_CALL_FAILED",
+                "METHOD_READ_LIMIT_EXCEEDED",
             }:
                 raise AgentExecutionError(exc.code) from exc
             if isinstance(exc, RetrievalError) and exc.code == "NON_IDEMPOTENT_RETRY_BLOCKED":

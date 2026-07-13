@@ -86,6 +86,7 @@ async def retrieve_task_context(
     on_tool_call: Callable[[dict[str, Any]], None] | None = None,
     deadline: float | None = None,
     max_result_chars: int | None = None,
+    max_methods_read: int | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -95,6 +96,7 @@ async def retrieve_task_context(
     allowed_categories = set(definition.required_capabilities)
     context: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []
+    methods_read = 0
     for item in plan:
         if not isinstance(item, dict) or not isinstance(item.get("tool"), str):
             raise RetrievalError("RETRIEVAL_STEP_INVALID")
@@ -107,6 +109,10 @@ async def retrieve_task_context(
             raise ToolNotAllowedError(f"MCP tool is not published: {tool_name}")
         if contract.category not in allowed_categories:
             raise RetrievalError("RETRIEVAL_CAPABILITY_NOT_ALLOWED")
+        if tool_name == "read_source":
+            if max_methods_read is not None and methods_read >= max_methods_read:
+                raise RetrievalError("METHOD_READ_LIMIT_EXCEEDED", calls)
+            methods_read += 1
         if deadline is not None and time.monotonic() >= deadline:
             raise RetrievalError("TASK_TIMEOUT", calls)
         if before_tool_call is not None and not before_tool_call():

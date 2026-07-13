@@ -16,6 +16,7 @@ Public API responses and the UI use stable codes without returning stack traces,
 | `TASK_TIMEOUT` | — | Задача превысила допустимое время. | Task becomes `failed`; no automatic retry. |
 | `MCP_RESULT_TOO_LARGE` | — | MCP вернул слишком большой результат. | Task becomes `failed`; reduce retrieval scope and create a new task. |
 | `FINDINGS_LIMIT_EXCEEDED` | — | Отчёт содержит слишком много findings. | Task becomes `failed`; narrow the task scope and retry. |
+| `METHOD_READ_LIMIT_EXCEEDED` | — | Превышен лимит чтения модулей. | Task becomes `failed`; reduce the source scope and create a new task. |
 | `NON_IDEMPOTENT_RETRY_BLOCKED` | — | Повтор неидемпотентного read-only вызова заблокирован. | Task becomes `failed`; inspect the audit and retry only as a new reviewed task. |
 | `CONTEXT_LIMIT_EXCEEDED` | — | Контекст задачи слишком большой. | Task becomes `failed`; reduce scope and create a new task. |
 | `MODEL_REPORT_INVALID` | — | Модель вернула неподдерживаемый отчёт. | Task becomes `failed`; no findings are persisted. |

@@ -260,6 +260,44 @@ def test_retrieval_rejects_an_oversized_mcp_result(tmp_path: Path) -> None:
     assert error.value.calls[0]["errorCode"] == "MCP_RESULT_TOO_LARGE"
 
 
+def test_retrieval_limits_read_source_module_reads(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    tool_calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal tool_calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        tool_calls += 1
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "id": body["id"], "result": {"content": []}},
+        )
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {
+                    "retrieval": [
+                        {"tool": "read_source", "arguments": {"module": "Catalog.A"}},
+                        {"tool": "read_source", "arguments": {"module": "Catalog.B"}},
+                    ]
+                },
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                McpConnector("http://mcp.test", snapshot, transport=httpx.MockTransport(handler)),
+                max_methods_read=1,
+            )
+        )
+
+    assert error.value.code == "METHOD_READ_LIMIT_EXCEEDED"
+    assert len(error.value.calls) == 1
+    assert tool_calls == 1
+
+
 def test_object_aware_search_context_keeps_matching_modules() -> None:
     output = {
         "content": [

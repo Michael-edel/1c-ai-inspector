@@ -83,7 +83,7 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 Перед постановкой задачи API проверяет `project.environment` против `APP_ENVIRONMENT` и доступные capabilities выбранного агента. Несовпадение окружения или неполный read-only toolset создаёт terminal blocked task с событием `task_blocked`, стабильным кодом ошибки и нулевым числом MCP calls; `staging` и `production` не допускаются в v0.1.
 
-При cooperative cancel worker проверяет флаг перед каждым новым retrieval tool call, сохраняет уже завершённые calls и переводит задачу в `cancelled` до запуска следующего MCP-вызова или модели.
+При cooperative cancel worker проверяет флаг перед каждым новым retrieval tool call, обновляет heartbeat, сохраняет уже завершённые calls и переводит задачу в `cancelled` до запуска следующего MCP-вызова или модели. Terminal-задачи освобождают worker lease; зависшая running-задача возвращается в очередь с событием `task_recovered` и кодом `WORKER_LEASE_EXPIRED`.
 
 Если задача завершилась со статусом `failed` или отчёт не получил исходный модуль, обновите состояние панели и создайте новую задачу. Для аудита выбирайте `1C Audit Agent`; UI не отправляет явный audit-запрос с другим профилем, чтобы не получить нерелевантный read-only контекст.
 

@@ -6,7 +6,7 @@ import time
 import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.agents.executor import AgentExecutionError, execute_agent
 from app.agents.registry import AgentRegistry
@@ -29,30 +29,45 @@ logger = logging.getLogger(__name__)
 def recover_stale_tasks(session, lease_timeout_sec: int) -> int:
     cutoff = datetime.now(timezone.utc).timestamp() - lease_timeout_sec
     cutoff_dt = datetime.fromtimestamp(cutoff, timezone.utc)
-    result = session.execute(
-        update(Task)
+    stale_tasks = session.scalars(
+        select(Task)
         .where(
             Task.status == TaskStatus.RUNNING.value,
             Task.heartbeat_at.is_not(None),
             Task.heartbeat_at < cutoff_dt,
         )
-        .values(
-            status=TaskStatus.QUEUED.value,
-            locked_by=None,
-            locked_at=None,
-            heartbeat_at=None,
-            last_error_code="WORKER_LEASE_EXPIRED",
+        .with_for_update(skip_locked=True)
+    ).all()
+    for task in stale_tasks:
+        task.status = TaskStatus.QUEUED.value
+        release_task_lease(task)
+        task.last_error_code = "WORKER_LEASE_EXPIRED"
+        AuditRecorder(session).record_event(
+            task.id,
+            "task_recovered",
+            {"reason": "WORKER_LEASE_EXPIRED", "attempt": task.attempt},
         )
-    )
-    return result.rowcount
+    return len(stale_tasks)
+
+
+def release_task_lease(task: Task) -> None:
+    task.locked_by = None
+    task.locked_at = None
+    task.heartbeat_at = None
 
 
 def task_allows_next_tool(session, task_id: str) -> bool:
     try:
         task = session.get(Task, task_id)
-        return task is not None and task.status == TaskStatus.RUNNING.value and not task.cancel_requested
-    finally:
+        if task is None or task.status != TaskStatus.RUNNING.value or task.cancel_requested:
+            session.rollback()
+            return False
+        task.heartbeat_at = datetime.now(timezone.utc)
+        session.commit()
+        return True
+    except Exception:
         session.rollback()
+        raise
 
 
 def claim_next_task(session, lease_timeout_sec: int = 600):
@@ -193,7 +208,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             )
             validate_transition(TaskStatus.RUNNING.value, report.status)
             task.status = report.status
-            task.heartbeat_at = datetime.now(timezone.utc)
+            release_task_lease(task)
             task.result_json = report.model_dump_json(by_alias=True)
             persist_findings(session, report)
             AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent_code})
@@ -206,6 +221,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 else:
                     task.status = TaskStatus.FAILED.value
                     task.last_error_code = exc.code
+                    release_task_lease(task)
                     task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
                     AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
         return True

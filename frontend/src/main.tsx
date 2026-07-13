@@ -31,17 +31,34 @@ const taskStatusDescriptions: Record<string, string> = {
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 const taskStatusLabel = (status: string) => taskStatusLabels[status] ?? "Подготовка";
 const taskStatusDescription = (status: string) => taskStatusDescriptions[status] ?? "Получаем состояние задачи.";
+const extractObjectReference = (text: string) => {
+  const match = text.match(/\b(документ\w*|справочник\w*|регистр\w*)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
+  if (!match) return null;
+  const type = match[1].toLowerCase();
+  return {
+    name: match[2],
+    type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : "InformationRegister",
+  };
+};
 const retrievalPlanForAgent = (agentCode: string, text: string) => {
   const query = text.trim();
+  const object = extractObjectReference(query);
+  const searchQuery = object?.name ?? query;
   if (agentCode === "1c_query_agent") {
     return [
       { tool: "validate_query", arguments: { query } },
-      { tool: "get_metadata_tree", arguments: { query } },
+      { tool: "get_metadata_tree", arguments: { filter: object?.name ?? query } },
+    ];
+  }
+  if (agentCode === "1c_audit_agent" && object) {
+    return [
+      { tool: "search_code", arguments: { query: searchQuery, limit: 10, mode: "smart" } },
+      { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
     ];
   }
   return [
-    { tool: "bsl_syntax_help", arguments: { query } },
-    { tool: "search_code", arguments: { query, limit: 5, mode: "smart" } },
+    { tool: "bsl_syntax_help", arguments: { query: searchQuery } },
+    { tool: "search_code", arguments: { query: searchQuery, limit: 5, mode: "smart" } },
   ];
 };
 

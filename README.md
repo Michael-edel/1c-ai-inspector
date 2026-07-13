@@ -102,6 +102,7 @@ Invoke-RestMethod http://localhost:8000/api/v1/system/ready
 
 Статическую acceptance-проверку можно запустить без поднятия контейнеров: `.\scripts\acceptance.ps1 -SkipDockerRuntime`. Полная проверка дополнительно требует доступный Docker Engine и выполняет backend health smoke test. Offline acceptance-тест отдельно проходит mock MCP -> project sync -> retrieval -> report контур и не заменяет live EDT/MODEL E2E.
 Live acceptance после настройки `.env` запускается командой `.\scripts\live-acceptance.ps1`; для оставления контейнеров работающими используйте `-KeepRunning`. Скрипт проверяет Docker, backend health, diagnostics, MCP health/discovery, bridge tool smoke call и project sync, а при placeholder-конфигурации перечисляет все отсутствующие ключи. Docker preflight завершается с timeout, если daemon не отвечает.
+При `MCP_TRANSPORT=bridge` значение `MCP_SERVER_URL` должно быть доступно из backend/worker-контейнеров: для bridge на Windows host используйте `http://host.docker.internal:<port>`, а не `127.0.0.1`; `MCP_LIVE_PROBE_URL` используется только host-side smoke probe. Production E2E проверяет три read-only профиля через `v01-acceptance.ps1`: Code Assistant, Query Agent и Audit Agent.
 Финальную приемку v0.1 с проверкой готовности, project sync, read-only toolset и конкретных task reports запускайте так:
 
 ```powershell

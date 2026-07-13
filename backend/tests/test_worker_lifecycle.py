@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.worker import (
     refresh_task_heartbeat,
     release_task_lease,
     task_allows_next_tool,
+    WorkerLeaseLostError,
 )
 
 
@@ -103,6 +105,22 @@ def test_heartbeat_does_not_refresh_cancelled_task() -> None:
         session.refresh(task)
 
     assert task.heartbeat_at is not None
+
+
+def test_task_gate_rejects_a_recovered_worker_lease() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        task = make_worker_task(session)
+
+        with pytest.raises(WorkerLeaseLostError):
+            task_allows_next_tool(session, task.id, "worker-b")
+
+        session.rollback()
+        session.refresh(task)
+
+    assert task.locked_by == "worker-a"
 
 
 def test_completed_tool_call_is_loaded_into_retry_cache() -> None:

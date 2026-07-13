@@ -6,6 +6,7 @@ import time
 import asyncio
 import threading
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -25,6 +26,10 @@ from app.services.task_cancellation import finalize_task_cancellation
 from app.services.task_state import validate_transition
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerLeaseLostError(RuntimeError):
+    """Raised when a recovered task is no longer owned by this worker."""
 
 
 def recover_stale_tasks(session, lease_timeout_sec: int) -> int:
@@ -82,8 +87,23 @@ def load_completed_tool_calls(session, task_id: str) -> dict[str, dict[str, obje
     return cache
 
 
-def persist_tool_call(session, task_id: str, call: dict[str, object]) -> None:
+def assert_task_lease(session, task_id: str, lease_owner: str | None = None, *, lock: bool = False) -> Task:
+    statement = select(Task).where(Task.id == task_id)
+    if lock:
+        statement = statement.with_for_update()
+    task = session.scalar(statement)
+    if task is None or task.status != TaskStatus.RUNNING.value:
+        raise WorkerLeaseLostError(task_id)
+    if lease_owner is not None and task.locked_by != lease_owner:
+        raise WorkerLeaseLostError(task_id)
+    return task
+
+
+def persist_tool_call(
+    session, task_id: str, call: dict[str, object], lease_owner: str | None = None
+) -> None:
     with session.begin():
+        assert_task_lease(session, task_id, lease_owner, lock=True)
         AuditRecorder(session).record_tool_call(
             task_id,
             call["toolName"],
@@ -97,7 +117,11 @@ def persist_tool_call(session, task_id: str, call: dict[str, object]) -> None:
     call["persisted"] = True
 
 
-def record_retrieval_calls(session, task_id: str, calls: list[dict[str, object]]) -> None:
+def record_retrieval_calls(
+    session, task_id: str, calls: list[dict[str, object]], lease_owner: str | None = None
+) -> None:
+    if lease_owner is not None:
+        assert_task_lease(session, task_id, lease_owner, lock=True)
     reused_count = 0
     for call in calls:
         if call.get("reused"):
@@ -122,31 +146,47 @@ def record_retrieval_calls(session, task_id: str, calls: list[dict[str, object]]
         )
 
 
-def refresh_task_heartbeat(session, task_id: str) -> bool:
+def refresh_task_heartbeat(
+    session, task_id: str, lease_owner: str | None = None
+) -> bool:
     task = session.get(Task, task_id)
-    if task is None or task.status != TaskStatus.RUNNING.value or task.cancel_requested:
+    if task is None or task.status != TaskStatus.RUNNING.value:
+        return False
+    if lease_owner is not None and task.locked_by != lease_owner:
+        raise WorkerLeaseLostError(task_id)
+    if task.cancel_requested:
         return False
     task.heartbeat_at = datetime.now(timezone.utc)
     return True
 
 
-def task_allows_next_tool(session, task_id: str) -> bool:
+def task_allows_next_tool(
+    session, task_id: str, lease_owner: str | None = None
+) -> bool:
     try:
-        allowed = refresh_task_heartbeat(session, task_id)
+        task = assert_task_lease(session, task_id, lease_owner)
+        if task.cancel_requested:
+            session.rollback()
+            return False
+        task.heartbeat_at = datetime.now(timezone.utc)
         session.commit()
-        return allowed
+        return True
     except Exception:
         session.rollback()
         raise
 
 
-def heartbeat_loop(task_id: str, interval_sec: int, stop_event: threading.Event) -> None:
+def heartbeat_loop(
+    task_id: str, lease_owner: str, interval_sec: int, stop_event: threading.Event
+) -> None:
     while not stop_event.wait(interval_sec):
         heartbeat_session = get_session_factory()()
         try:
             with heartbeat_session.begin():
-                if not refresh_task_heartbeat(heartbeat_session, task_id):
+                if not refresh_task_heartbeat(heartbeat_session, task_id, lease_owner):
                     return
+        except WorkerLeaseLostError:
+            return
         except Exception:
             logger.exception("Worker heartbeat refresh failed", extra={"task_id": task_id})
         finally:
@@ -173,7 +213,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
         return None
     validate_transition(task.status, TaskStatus.RUNNING.value)
     task.status = TaskStatus.RUNNING.value
-    task.locked_by = socket.gethostname()
+    task.locked_by = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex}"
     task.locked_at = now
     task.heartbeat_at = now
     task.attempt += 1
@@ -184,6 +224,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
 def process_one_task(lease_timeout_sec: int = 600) -> bool:
     session = get_session_factory()()
     task_id: str | None = None
+    lease_owner: str | None = None
     completed_calls: dict[str, dict[str, object]] = {}
     heartbeat_stop = threading.Event()
     heartbeat_thread: threading.Thread | None = None
@@ -193,6 +234,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if task is None:
                 return False
             task_id = task.id
+            lease_owner = task.locked_by
             session.add(
                 TaskEvent(
                     task_id=task_id,
@@ -216,7 +258,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         settings = get_settings()
         heartbeat_thread = threading.Thread(
             target=heartbeat_loop,
-            args=(task_id, settings.worker_heartbeat_interval_sec, heartbeat_stop),
+            args=(task_id, lease_owner, settings.worker_heartbeat_interval_sec, heartbeat_stop),
             name=f"task-heartbeat-{task_id[:8]}",
             daemon=True,
         )
@@ -239,9 +281,9 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         snapshot,
                         connector,
                         settings.max_tool_calls,
-                        before_tool_call=lambda: task_allows_next_tool(session, task_id),
+                        before_tool_call=lambda: task_allows_next_tool(session, task_id, lease_owner),
                         completed_calls=completed_calls,
-                        on_tool_call=lambda call: persist_tool_call(session, task_id, call),
+                        on_tool_call=lambda call: persist_tool_call(session, task_id, call, lease_owner),
                     )
                 finally:
                     await connector.close()
@@ -250,7 +292,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         except (RetrievalError, ToolNotAllowedError, ValueError) as exc:
             if isinstance(exc, RetrievalError) and exc.calls:
                 with session.begin():
-                    record_retrieval_calls(session, task_id, exc.calls)
+                    record_retrieval_calls(session, task_id, exc.calls, lease_owner)
             if isinstance(exc, RetrievalError) and exc.code == "TASK_CANCELLED_BY_USER":
                 with session.begin():
                     task = session.get(Task, task_id)
@@ -261,17 +303,13 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 raise AgentExecutionError(exc.code) from exc
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():
-            task = session.get(Task, task_id)
-            if task is None:
-                raise AgentExecutionError("TASK_NOT_FOUND")
+            task = assert_task_lease(session, task_id, lease_owner, lock=True)
             if task.cancel_requested:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
-            record_retrieval_calls(session, task_id, retrieval.calls)
+            record_retrieval_calls(session, task_id, retrieval.calls, lease_owner)
         with session.begin():
-            task = session.get(Task, task_id)
-            if task is None:
-                raise AgentExecutionError("TASK_NOT_FOUND")
+            task = assert_task_lease(session, task_id, lease_owner)
             if task.cancel_requested:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
@@ -284,12 +322,17 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 retrieval.context,
                 retrieval.calls,
             )
+            assert_task_lease(session, task_id, lease_owner)
             validate_transition(TaskStatus.RUNNING.value, report.status)
             task.status = report.status
             release_task_lease(task)
             task.result_json = report.model_dump_json(by_alias=True)
             persist_findings(session, report)
             AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent_code})
+    except WorkerLeaseLostError:
+        session.rollback()
+        logger.warning("Worker lost task lease", extra={"task_id": task_id})
+        return False
     except AgentExecutionError as exc:
         with session.begin():
             task = session.get(Task, task_id)

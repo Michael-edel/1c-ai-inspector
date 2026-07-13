@@ -193,19 +193,18 @@ Security/load smoke запускается командой `.\scripts\security-
 
 После backup выполните на VPS `bash infra/ops/restore-drill.sh`. Скрипт берет свежие dump-файлы application PostgreSQL и Keycloak, восстанавливает их в одноразовые контейнеры `postgres:16-alpine` и удаляет контейнеры после проверки; рабочие базы и сервисы не изменяются. Максимальный возраст dump задается `MAX_AGE_HOURS` (по умолчанию 48).
 
-Единый release acceptance v0.6 запускается так:
+Единый production release acceptance текущего контура запускается после создания трех завершенных read-only задач:
 
 ```powershell
-.\scripts\v06-acceptance.ps1
+.\scripts\final-production-acceptance.ps1 `
+  -BaseUrl https://inspector.michael.kz `
+  -CodeTaskId <code-task-id> `
+  -QueryTaskId <query-task-id> `
+  -AuditTaskId <audit-task-id> `
+  -LoadCount 20
 ```
 
-Production-вариант дополнительно требует настроенный внешний IdP/JWKS и отдельный package signing secret:
-
-```powershell
-.\scripts\v06-acceptance.ps1 -Production
-```
-
-Локальный smoke подтверждает signed compatibility и live EDT MCP; production-вариант нельзя считать пройденным без реальных значений `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE` и запуска внешнего IdP.
+Сценарий проверяет production monitor, безопасные error contracts, v0.7 UAT для трех агентов и security/load smoke. Он не считает release принятым без реального внешнего IdP/JWKS, readiness, read-only MCP calls и persisted evidence.
 
 Единый UAT/release acceptance запускается командой `.\scripts\release-acceptance.ps1 -KeepRunning`. Он проверяет реальный локальный Keycloak JWT flow, EDT MCP evidence, security/load smoke и PostgreSQL backup. Для EDT-проверки предусмотрены до трех попыток на случай краткого таймаута bridge. Для production env-файла добавьте `-ProductionEnvFile C:\path\to\production.env`; preflight проверит persistent Keycloak и Caddy edge, но не запускает production без явной команды Compose.
 

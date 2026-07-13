@@ -46,6 +46,7 @@ const extractObjectReference = (text: string) => {
     category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
   };
 };
+const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
 const retrievalPlanForAgent = (agentCode: string, text: string) => {
@@ -53,9 +54,10 @@ const retrievalPlanForAgent = (agentCode: string, text: string) => {
   const object = extractObjectReference(query);
   const searchQuery = object?.name ?? query;
   if (agentCode === "1c_query_agent") {
+    const metadataArguments = object ? { filter: metadataCategoryForType(object.type) } : {};
     return [
       { tool: "validate_query", arguments: { query } },
-      { tool: "get_metadata_tree", arguments: { filter: object?.name ?? query } },
+      { tool: "get_metadata_tree", arguments: metadataArguments },
     ];
   }
   if (agentCode === "1c_audit_agent" && object) {

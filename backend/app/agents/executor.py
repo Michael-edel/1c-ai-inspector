@@ -1,4 +1,6 @@
 import json
+import re
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,81 @@ def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
         ):
             has_search_context = True
     return "partial" if has_search_context else "none"
+
+
+def _source_documents(extra_context: list[dict[str, object]] | None) -> dict[str, str]:
+    documents: dict[str, str] = {}
+    for item in extra_context or []:
+        if item.get("tool") != "read_source":
+            continue
+        data = item.get("data")
+        if not isinstance(data, dict) or data.get("sourceComplete") is not True:
+            continue
+        candidates: list[Any] = [data]
+        content = data.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                    continue
+                try:
+                    payload = json.loads(block["text"])
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(payload, dict):
+                    candidates.append(payload)
+        for candidate in candidates:
+            module = candidate.get("module")
+            source = candidate.get("source")
+            if isinstance(module, str) and module.strip() and isinstance(source, str):
+                documents[module.strip()] = source
+    return documents
+
+
+def _normalized_evidence_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.replace("\r\n", "\n")).strip()
+
+
+def _excerpt_matches(excerpt: str, source_window: str) -> bool:
+    normalized_source = _normalized_evidence_text(source_window)
+    parts = [part for part in excerpt.split("...") if part.strip()]
+    if not parts:
+        return False
+    cursor = 0
+    for part in parts:
+        normalized_part = _normalized_evidence_text(part)
+        position = normalized_source.find(normalized_part, cursor)
+        if position < 0:
+            return False
+        cursor = position + len(normalized_part)
+    return True
+
+
+def _validate_source_evidence(
+    report: StructuredReport, extra_context: list[dict[str, object]] | None
+) -> None:
+    documents = _source_documents(extra_context)
+    if not documents:
+        return
+    for finding in report.findings:
+        for evidence in finding.evidence:
+            if evidence.type != "source_range":
+                continue
+            candidates = [evidence.module]
+            if finding.object_fqn:
+                candidates.append(f"{finding.object_fqn}.{evidence.module}")
+            source = next((documents.get(candidate) for candidate in candidates if candidate in documents), None)
+            if source is None:
+                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
+            if evidence.line_start is None or evidence.line_end is None:
+                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
+            lines = source.splitlines()
+            if evidence.line_start > evidence.line_end or evidence.line_end > len(lines):
+                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
+            if evidence.excerpt and not _excerpt_matches(
+                evidence.excerpt,
+                "\n".join(lines[evidence.line_start - 1 : evidence.line_end]),
+            ):
+                raise AgentExecutionError("MODEL_EVIDENCE_INVALID")
 
 
 def execute_agent(
@@ -89,6 +166,7 @@ def execute_agent(
 
     if report.task_id != task.id:
         raise AgentExecutionError("MODEL_REPORT_TASK_MISMATCH")
+    _validate_source_evidence(report, extra_context)
     source_coverage = _source_coverage(extra_context)
     limitations = list(report.limitations)
     next_actions = list(report.next_actions)

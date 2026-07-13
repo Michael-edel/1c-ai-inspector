@@ -15,6 +15,7 @@ def test_bridge_policy_is_read_only() -> None:
         "get_form_structure",
         "get_metadata_tree",
         "get_object_structure",
+        "read_source",
         "search_code",
         "validate_query",
     }

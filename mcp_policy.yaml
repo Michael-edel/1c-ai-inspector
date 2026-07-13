@@ -25,6 +25,10 @@ tools:
     name: get_object_structure
     category: references.read
     mode: read-only
+  read_source:
+    name: read_source
+    category: bsl.read
+    mode: read-only
   search_code:
     name: search_code
     category: code.search

@@ -21,7 +21,7 @@ class AgentExecutionError(RuntimeError):
 def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
     has_search_context = False
     for item in extra_context or []:
-        if item.get("tool") != "search_code":
+        if item.get("tool") not in {"search_code", "read_source"}:
             continue
         data = item.get("data")
         if not isinstance(data, dict):
@@ -94,7 +94,7 @@ def execute_agent(
     next_actions = list(report.next_actions)
     if definition.task_kind == "module_audit" and source_coverage != "full":
         limitation = (
-            "Полный исходный текст модуля не получен; findings основаны на частичных результатах search_code."
+            "Полный исходный текст модуля не получен; findings основаны на частичных результатах search_code/MCP."
             if source_coverage == "partial"
             else "MCP не вернул исходный текст модуля; полноценный аудит и findings невозможны."
         )

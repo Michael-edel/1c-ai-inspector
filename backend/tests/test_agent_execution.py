@@ -131,3 +131,38 @@ def test_module_audit_marks_partial_source_context() -> None:
         assert report.source_coverage == "partial"
         assert any("частичн" in item and "search_code" in item for item in report.limitations)
         assert report.next_actions
+
+
+def test_module_audit_marks_complete_source_context() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_full_source",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "audit"}),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_audit_agent"),
+            get_settings(),
+            FakeAdapter(),
+            extra_context=[
+                {
+                    "source": "MCP",
+                    "tool": "read_source",
+                    "data": {
+                        "sourceComplete": True,
+                        "content": [{"type": "text", "text": "full module source"}],
+                    },
+                }
+            ],
+        )
+        assert report.source_coverage == "full"
+        assert report.limitations == []

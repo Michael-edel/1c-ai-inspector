@@ -61,7 +61,7 @@ Approval policy учитывает environment и impact risk: `sandbox` с по
 - `GET /api/v1/tasks/{task_id}/report` для structured report и сохранённых findings.
 - `GET /api/v1/tasks/{task_id}/report/export` для JSON-файла с report и audit-данными без исходного запроса.
 - `POST /api/v1/projects/sync` для read-only MCP-синхронизации проектов.
-- `search_code` для read-only поиска по выгруженным BSL-модулям конфигурации.
+- `search_code` для read-only поиска по выгруженным BSL-модулям конфигурации и `read_source` для полного текста одного модуля, если bridge настроен с `ONEC_MCP_DUMP_PATH`.
 
 ## Запуск в PowerShell
 
@@ -243,7 +243,7 @@ MCP connector использует Streamable HTTP session lifecycle: `initializ
 
 Для `sales-ai-manager/onec-mcp-bridge` доступен режим `MCP_TRANSPORT=bridge`: Inspector вызывает bridge endpoints `/health`, `/tools`, `/tools/call` и передаёт `MCP_BRIDGE_TOKEN` как Bearer token. Raw MCP режим остаётся `MCP_TRANSPORT=streamable-http`.
 
-Текущая bridge policy публикует только фактически доступные read-only tools: syntax help, configuration info, event log, form/metadata/object structure, code search и query validation. `execute_query` намеренно не публикуется. `search_code` работает по отдельной выгрузке конфигурации через `DumpConfigToFiles` и не требует изменения конфигурации 1С; bridge запускается с параметром `mcp-1c --dump <path>`. Без успешного discovery Code Assistant и Audit Agent по-прежнему блокируются readiness gate.
+Текущая bridge policy публикует только фактически доступные read-only tools: syntax help, configuration info, event log, form/metadata/object structure, code search, full source retrieval и query validation. `execute_query` намеренно не публикуется. `search_code` и `read_source` работают по отдельной read-only выгрузке конфигурации через `DumpConfigToFiles` и не требуют изменения конфигурации 1С. Без успешного discovery Code Assistant и Audit Agent по-прежнему блокируются readiness gate. Если полный источник недоступен, отчет явно показывает `sourceCoverage=partial` или `none`.
 
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 

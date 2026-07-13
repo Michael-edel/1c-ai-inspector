@@ -49,7 +49,7 @@ const extractObjectReference = (text: string) => {
 const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
-const retrievalPlanForAgent = (agentCode: string, text: string) => {
+const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: string[] = []) => {
   const query = text.trim();
   const object = extractObjectReference(query);
   const searchQuery = object?.name ?? query;
@@ -61,10 +61,16 @@ const retrievalPlanForAgent = (agentCode: string, text: string) => {
     ];
   }
   if (agentCode === "1c_audit_agent" && object) {
-    return [
-      { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: "МодульОбъекта", mode: "exact" } },
+    const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
+    const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
+    if (publishedTools.includes("read_source")) {
+      plan.push({ tool: "read_source", arguments: { module: `${object.category}.${object.name}.${moduleType}` } });
+    }
+    plan.push(
+      { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } },
       { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
-    ];
+    );
+    return plan;
   }
   return [
     { tool: "bsl_syntax_help", arguments: { query: searchQuery } },
@@ -257,7 +263,7 @@ function App() {
       const created = await api<{ task_id: string; status: string }>("/api/v1/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: selectedProject, agentId: selectedAgent, request: { text: taskText.trim(), retrieval: retrievalPlanForAgent(selectedAgent, taskText) } }),
+        body: JSON.stringify({ projectId: selectedProject, agentId: selectedAgent, request: { text: taskText.trim(), retrieval: retrievalPlanForAgent(selectedAgent, taskText, policy?.publishedTools ?? []) } }),
       });
       setTaskId(created.task_id);
       setTaskStatus(created.status || "queued");

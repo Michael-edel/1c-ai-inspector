@@ -1,4 +1,5 @@
 import json
+import hashlib
 import time
 
 import httpx
@@ -29,6 +30,7 @@ def test_openai_compatible_adapter_parses_content_and_usage() -> None:
     assert json.loads(result.content) == {"ok": True}
     assert result.input_tokens == 12
     assert result.output_tokens == 7
+    assert result.response_checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
 
 
 def test_openai_compatible_adapter_accepts_content_blocks_and_json_fence() -> None:

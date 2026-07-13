@@ -1,4 +1,5 @@
 import json
+import hashlib
 from datetime import datetime, timezone
 
 import pytest
@@ -134,6 +135,13 @@ def test_agent_execution_persists_model_usage() -> None:
         usage = session.scalars(select(ModelUsage).where(ModelUsage.task_id == task.id)).one()
         assert usage.input_tokens == 3
         assert usage.output_tokens == 5
+        expected_content = FakeAdapter().complete([{
+            "role": "user",
+            "content": "Task envelope:\n" + json.dumps({"taskId": task.id}),
+        }]).content
+        assert usage.response_checksum == hashlib.sha256(
+            expected_content.encode("utf-8")
+        ).hexdigest()
 
 
 def test_agent_execution_rejects_too_many_findings() -> None:

@@ -117,6 +117,7 @@ class ModelUsage(TimestampMixin, Base):
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estimated_cost: Mapped[float] = mapped_column(nullable=False, default=0)
+    response_checksum: Mapped[str | None] = mapped_column(String(64))
 
 
 class NormalizedTool(TimestampMixin, Base):

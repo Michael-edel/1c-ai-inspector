@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 from typing import Any
 
@@ -296,5 +297,6 @@ def execute_agent(
         result.output_tokens,
         settings.model_input_cost_per_1k,
         settings.model_output_cost_per_1k,
+        result.response_checksum or hashlib.sha256(result.content.encode("utf-8")).hexdigest(),
     )
     return report

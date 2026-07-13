@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import hashlib
 import json
 import time
 from typing import Protocol
@@ -13,6 +14,7 @@ class ModelResult:
     content: str
     input_tokens: int
     output_tokens: int
+    response_checksum: str = ""
 
 
 class ModelAdapter(Protocol):
@@ -88,6 +90,7 @@ class OpenAICompatibleAdapter:
                 content=content,
                 input_tokens=int(usage.get("prompt_tokens", 0)),
                 output_tokens=int(usage.get("completion_tokens", 0)),
+                response_checksum=hashlib.sha256(content.encode("utf-8")).hexdigest(),
             )
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ModelError("MODEL_RESPONSE_INVALID") from exc

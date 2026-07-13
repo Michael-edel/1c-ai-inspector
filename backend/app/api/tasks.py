@@ -336,6 +336,7 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "inputTokens": item.input_tokens,
                 "outputTokens": item.output_tokens,
                 "estimatedCost": item.estimated_cost,
+                "responseChecksum": item.response_checksum,
             }
             for item in usage
         ],

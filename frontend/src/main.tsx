@@ -108,6 +108,32 @@ const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
+const downloadFile = async (path: string, filename: string, options?: RequestInit) => {
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    let code: string | undefined;
+    try {
+      const body = await response.json() as { detail?: { code?: string } | string };
+      code = typeof body.detail === "object" ? body.detail?.code : body.detail;
+    } catch {
+      // Keep download errors generic when the response is not JSON.
+    }
+    const message = (code && publicErrorMessages[code]) || (response.status === 409 ? "Действие недоступно для текущего состояния задачи." : "Файл не удалось скачать. Повторите попытку.");
+    throw new ApiError(response.status, message, code);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    anchor.remove();
+  }, 0);
+};
+
 function App() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [policy, setPolicy] = useState<Policy | null>(null);
@@ -343,17 +369,10 @@ function App() {
   const exportReport = async () => {
     if (!taskId) return;
     try {
-      const response = await fetch(`/api/v1/tasks/${taskId}/report/export`);
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${taskId}-report.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(`/api/v1/tasks/${taskId}/report/export`, `${taskId}-report.json`);
       setMessage("Отчёт и audit экспортированы в JSON.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Отчёт ещё не готов к экспорту");
+      setError(reason instanceof ApiError ? reason.message : "Отчёт ещё не готов к экспорту");
     }
   };
 
@@ -419,16 +438,9 @@ function App() {
     if (!patchProposal || !authToken.trim()) return;
     setPatchBusy(true);
     try {
-      const response = await fetch(`/api/v1/patch-proposals/${patchProposal.id}/package`, { headers: { Authorization: `Bearer ${authToken.trim()}` } });
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${patchProposal.id}.zip`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await downloadFile(`/api/v1/patch-proposals/${patchProposal.id}/package`, `${patchProposal.id}.zip`, { headers: { Authorization: `Bearer ${authToken.trim()}` } });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Не удалось экспортировать package");
+      setError(reason instanceof ApiError ? reason.message : "Не удалось экспортировать package");
     } finally {
       setPatchBusy(false);
     }

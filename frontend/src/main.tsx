@@ -7,6 +7,7 @@ type Policy = { policyId: string; version: string; publishedTools: string[]; nor
 type Agent = { code: string; name: string; prompt_version: string; task_kind: string };
 type Audit = { task_id: string; status: string; events: { type: string }[]; tool_calls: { toolName: string; mode: string; status: string; durationMs: number | null; errorCode: string | null }[]; model_usage: { model: string; estimatedCost: number }[] };
 type TaskState = { taskId: string; status: string; resultReady: boolean; lastErrorCode: string | null };
+type TaskHistoryItem = { taskId: string; status: string; agentCode: string | null; agentName: string | null; projectId: string; projectName: string | null; environment: string | null; createdAt: string; updatedAt: string; resultReady: boolean; lastErrorCode: string | null };
 type Project = { id: string; name: string; environment: string; availableCapabilities: string[] };
 type ReportEvidence = { type: string; objectFqn: string; module: string; method: string | null; lineStart: number | null; lineEnd: number | null; excerpt: string | null; description: string | null; toolCallId: string | null };
 type ReportFinding = { category: string; severity: string; confidence: number; objectFqn: string; module: string; method: string | null; lineStart: number | null; lineEnd: number | null; description: string; risk: string; recommendation: string; evidence: ReportEvidence[] };
@@ -34,6 +35,7 @@ const taskStatusDescriptions: Record<string, string> = {
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 const taskStatusLabel = (status: string) => taskStatusLabels[status] ?? "Подготовка";
 const taskStatusDescription = (status: string) => taskStatusDescriptions[status] ?? "Получаем состояние задачи.";
+const formatTaskTime = (value: string) => new Date(value).toLocaleString();
 const extractObjectReference = (text: string) => {
   const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
   if (!match) return null;
@@ -83,6 +85,7 @@ function App() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [taskId, setTaskId] = useState("");
+  const [taskHistory, setTaskHistory] = useState<TaskHistoryItem[]>([]);
   const [audit, setAudit] = useState<Audit | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -106,6 +109,14 @@ function App() {
   const [patchEvents, setPatchEvents] = useState<PatchEvent[]>([]);
   const [patchBusy, setPatchBusy] = useState(false);
 
+  const loadTaskHistory = async () => {
+    try {
+      setTaskHistory(await api<TaskHistoryItem[]>("/api/v1/tasks"));
+    } catch {
+      setTaskHistory([]);
+    }
+  };
+
   const refresh = async () => {
     try {
       setError("");
@@ -124,6 +135,7 @@ function App() {
       } catch {
         setProjects([]);
       }
+      await loadTaskHistory();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось загрузить состояние");
     }
@@ -172,6 +184,7 @@ function App() {
         setTaskPollingError("");
         if (isTerminalTaskStatus(state.status)) {
           if (pollTimer !== undefined) window.clearInterval(pollTimer);
+          void loadTaskHistory();
           setMessage(state.status === "completed" ? "Задача завершена. Отчет загружен ниже." : `Задача завершилась: ${taskStatusLabel(state.status)}.`);
         }
       } catch {
@@ -224,10 +237,23 @@ function App() {
       setAudit(null);
       setTaskText("");
       setReport(null);
+      void loadTaskHistory();
       setMessage("Задача создана и отправлена в очередь.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось создать задачу");
     }
+  };
+
+  const selectHistoryTask = (item: TaskHistoryItem) => {
+    setTaskId(item.taskId);
+    setTaskStatus(item.status);
+    setTaskStartedAt(new Date(item.createdAt).getTime());
+    setTaskElapsedSeconds(Math.max(0, Math.floor((Date.now() - new Date(item.createdAt).getTime()) / 1000)));
+    setTaskLastErrorCode(item.lastErrorCode ?? "");
+    setTaskPollingError("");
+    setAudit(null);
+    setReport(null);
+    setMessage(`Выбрана задача ${item.taskId}.`);
   };
 
   const loadAudit = async () => {
@@ -327,10 +353,10 @@ function App() {
   };
 
   return <div className="shell">
-    <aside className="sidebar">
+      <aside className="sidebar">
       <div className="brand"><span className="brand-mark">1C</span><span>AI Inspector</span></div>
       <div className="side-caption">DEVELOPMENT CONTOUR</div>
-      <nav><a className="nav-item active" href="#overview"><span className="nav-dot" />Обзор</a><a className="nav-item" href="#agents"><span className="nav-dot muted" />Агенты</a><a className="nav-item" href="#policy"><span className="nav-dot muted" />Policy & tools</a></nav>
+      <nav><a className="nav-item active" href="#overview"><span className="nav-dot" />Обзор</a><a className="nav-item" href="#history"><span className="nav-dot muted" />Задачи</a><a className="nav-item" href="#agents"><span className="nav-dot muted" />Агенты</a><a className="nav-item" href="#policy"><span className="nav-dot muted" />Policy & tools</a></nav>
       <div className="side-footer"><span className="live-dot" />локальный sandbox</div>
     </aside>
     <main className="content">
@@ -339,6 +365,7 @@ function App() {
       {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
       {taskId && <section className={`task-monitor ${isTerminalTaskStatus(taskStatus) ? "finished" : ""} ${taskStatus === "failed" ? "failed" : ""}`} aria-live="polite"><div className="task-monitor-head"><div><span className="card-label">TASK MONITOR</span><strong>{taskStatusLabel(taskStatus)}</strong></div><span className="task-elapsed">Прошло {formatElapsed(taskElapsedSeconds)}</span></div><div className="task-monitor-track"><span /></div><p>{taskStatusDescription(taskStatus)}</p>{taskPollingError && <p className="task-monitor-warning">{taskPollingError}</p>}{taskLastErrorCode && <p className="task-monitor-warning">Код ошибки: {taskLastErrorCode}</p>}{taskElapsedSeconds >= 45 && !isTerminalTaskStatus(taskStatus) && <p className="task-monitor-warning">Проверка длится дольше обычного. MCP или модель могут отвечать медленно.</p>}</section>}
       <section className="metrics-row"><div className="metric"><span>Policy</span><strong>{policy?.version ?? "—"}</strong><small>{policy?.policyId ?? "loading"}</small></div><div className="metric"><span>Capabilities</span><strong>{policy?.normalizedTools.length ?? 0}</strong><small>{readiness?.capabilitiesStatus ?? "—"}</small></div><div className="metric"><span>Discovered</span><strong>{policy?.discoveredTools.length ?? 0}</strong><small>from MCP server</small></div></section>
+      <section className="panel task-history-panel" id="history"><div className="panel-heading"><div><span className="panel-index">00</span><h3>История задач</h3></div><button className="ghost-button compact" onClick={() => void loadTaskHistory()}>ОБНОВИТЬ</button></div>{taskHistory.length ? <div className="task-history-list">{taskHistory.map((item) => <button type="button" className={`task-history-row ${item.taskId === taskId ? "selected" : ""}`} key={item.taskId} onClick={() => selectHistoryTask(item)}><span className={`history-status history-${item.status}`}>{taskStatusLabel(item.status)}</span><span className="history-main"><strong>{item.agentName ?? item.agentCode ?? "Агент"}</strong><small>{item.projectName ?? item.projectId} · {formatTaskTime(item.createdAt)}</small></span><span className="history-id">{item.taskId.slice(0, 16)}…</span></button>)}</div> : <p className="empty-note">Задач пока нет.</p>}</section>
       <section className="work-grid"><div className="panel task-panel"><div className="panel-heading"><div><span className="panel-index">01</span><h3>Поставить задачу</h3></div><span className="lock">{canCreateTask ? "OPEN" : "LOCKED"}</span></div><form onSubmit={createTask}><label htmlFor="project">EDT project</label><select id="project" value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)} disabled={!canCreateTask || projects.length === 0}><option value="">Выберите проект</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {project.environment}</option>)}</select><label htmlFor="agent">Agent profile</label><select id="agent" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)} disabled={!canCreateTask}>{agents.map((agent) => <option key={agent.code} value={agent.code}>{agent.name}</option>)}</select><label htmlFor="task">Запрос по коду 1С</label><textarea id="task" value={taskText} onChange={(event) => setTaskText(event.target.value)} placeholder="Например: проверь запросы в модуле документа ЗаказКлиента" disabled={!canCreateTask} /><button className="primary-button" disabled={!canCreateTask || !selectedProject || !taskText.trim()}>{canCreateTask ? "Создать read-only задачу" : "Ожидание MCP tools"}</button></form></div><div className="panel" id="policy"><div className="panel-heading"><div><span className="panel-index">02</span><h3>Policy snapshot</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void syncProjects()}>SYNC PROJECTS</button><button className="ghost-button compact" onClick={() => void discoverTools()} disabled={discovering}>{discovering ? "DISCOVERING" : "DISCOVER MCP"}</button></div></div><dl className="data-list"><div><dt>Projects</dt><dd>{projects.length}</dd></div><div><dt>Policy checksum</dt><dd>{readiness?.policyChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Toolset checksum</dt><dd>{policy?.toolsetChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Published tools</dt><dd className="safe">{policy?.publishedTools.length ?? 0} read-only</dd></div></dl></div></section>
       <section className="panel agents-panel" id="agents"><div className="panel-heading"><div><span className="panel-index">03</span><h3>Agent registry</h3></div><span className="panel-note">v0.1 / 3 profiles</span></div><div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={agent.code}><span className="agent-number">0{index + 1}</span><div><strong>{agent.name}</strong><small>{agent.task_kind} · prompt {agent.prompt_version}</small></div><span className="agent-state">STAGED</span></div>)}</div></section>
       <section className="panel patch-panel" id="patch-planner"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Patch Planner</h3></div><span className="panel-note">PROPOSAL ONLY</span></div><p className="panel-intro">Сформируйте diff для проверки. Inspector не меняет файлы, Git или конфигурацию 1С.</p><form onSubmit={createPatchProposal} className="patch-form"><label htmlFor="patch-title">Название proposal</label><input id="patch-title" value={patchTitle} onChange={(event) => setPatchTitle(event.target.value)} /><label htmlFor="patch-path">Относительный путь BSL</label><input id="patch-path" value={patchPath} onChange={(event) => setPatchPath(event.target.value)} /><div className="patch-form-grid"><div><label htmlFor="patch-revision">Source revision</label><input id="patch-revision" value={patchRevision} onChange={(event) => setPatchRevision(event.target.value)} /></div><div><label htmlFor="patch-summary">Summary</label><input id="patch-summary" value={patchSummary} onChange={(event) => setPatchSummary(event.target.value)} /></div></div><label htmlFor="patch-original">Original</label><textarea id="patch-original" value={patchOriginal} onChange={(event) => setPatchOriginal(event.target.value)} /><label htmlFor="patch-proposed">Proposed</label><textarea id="patch-proposed" value={patchProposed} onChange={(event) => setPatchProposed(event.target.value)} /><div className="patch-actions"><button className="primary-button" disabled={patchBusy || !selectedProject || !patchPath.trim() || patchOriginal === patchProposed}>Сформировать proposal</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("impact")} disabled={patchBusy || !patchProposal}>ANALYZE IMPACT</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("revalidate")} disabled={patchBusy || !patchProposal}>REVALIDATE SOURCE</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("checkpoint")} disabled={patchBusy || !patchProposal || patchProposal.sourceValidationStatus !== "valid" || !["proposed", "checkpointed"].includes(patchProposal.status)}>CHECKPOINT</button></div></form>{patchProposal && <div className="patch-result"><div className="patch-result-head"><div><strong>{patchProposal.title}</strong><small>{patchProposal.id} · revision {patchProposal.sourceRevision ?? "—"}</small></div><span className={`patch-status ${patchProposal.status}`}>{patchProposal.status}</span></div><pre className="diff-view">{patchProposal.diff}</pre><div className="patch-meta"><span>Impact: {patchProposal.impact.length} candidate(s)</span><span>Source: {patchProposal.sourceValidationStatus}</span><span>Checkpoint: {patchProposal.checkpointRef ? "recorded" : "not recorded"}</span></div><div className="patch-decision"><label htmlFor="patch-actor">Actor</label><input id="patch-actor" value={patchActor} onChange={(event) => setPatchActor(event.target.value)} /><label htmlFor="patch-note">Decision note</label><input id="patch-note" value={patchNote} onChange={(event) => setPatchNote(event.target.value)} /><div className="patch-actions"><button type="button" className="primary-button" onClick={() => void runPatchAction("approve")} disabled={patchBusy || !["checkpointed", "awaiting_approval"].includes(patchProposal.status)}>Approve proposal</button><button type="button" className="ghost-button compact danger-button" onClick={() => void runPatchAction("reject")} disabled={patchBusy || ["approved", "rejected"].includes(patchProposal.status)}>Reject proposal</button><button type="button" className="ghost-button compact" onClick={exportPatchPackage} disabled={patchBusy}>EXPORT PACKAGE</button></div></div><div className="event-log"><div className="event-log-title">Proposal event log</div>{patchEvents.map((item) => <div className="event-row" key={item.id}><span>{item.type}</span><small>{item.actor} · {new Date(item.createdAt).toLocaleString()}</small></div>)}</div></div>}</section>

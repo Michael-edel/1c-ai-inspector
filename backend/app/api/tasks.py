@@ -41,6 +41,38 @@ class TaskAuditResponse(BaseModel):
     model_usage: list[dict[str, object]]
 
 
+@router.get("")
+def list_tasks(db: Session = Depends(get_db)) -> list[dict[str, object]]:
+    """Return safe task metadata for the operator history view."""
+    tasks = db.scalars(select(Task).order_by(Task.created_at.desc()).limit(50)).all()
+    agent_ids = {task.agent_id for task in tasks}
+    project_ids = {task.project_id for task in tasks}
+    agents = {
+        agent.id: agent
+        for agent in db.scalars(select(Agent).where(Agent.id.in_(agent_ids))).all()
+    }
+    projects = {
+        project.id: project
+        for project in db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+    }
+    return [
+        {
+            "taskId": task.id,
+            "status": task.status,
+            "agentCode": agents[task.agent_id].code if task.agent_id in agents else None,
+            "agentName": agents[task.agent_id].name if task.agent_id in agents else None,
+            "projectId": task.project_id,
+            "projectName": projects[task.project_id].name if task.project_id in projects else None,
+            "environment": projects[task.project_id].environment if task.project_id in projects else None,
+            "createdAt": task.created_at.isoformat(),
+            "updatedAt": task.updated_at.isoformat(),
+            "resultReady": task.result_json is not None,
+            "lastErrorCode": task.last_error_code,
+        }
+        for task in tasks
+    ]
+
+
 @router.get("/{task_id}")
 def task_status(task_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     task = db.get(Task, task_id)

@@ -50,6 +50,7 @@ Approval policy учитывает environment и impact risk: `sandbox` с по
 - `/api/v1/system/diagnostics` для проверки конфигурации MCP, policy и Model API без раскрытия секретов.
 - `/api/v1/system/metrics` для авторизованных aggregate-метрик proposal/task/tool-call/package без идентификаторов proposal и секретов.
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
+- `GET /api/v1/tasks` возвращает последние 50 задач для безопасной истории без исходного запроса и результата.
 - `GET /api/v1/tasks/{task_id}` для статуса, attempt и result readiness.
 - `GET /api/v1/agents` с тремя агентами v0.1.
 - React/Vite web UI на `http://localhost:5173`.
@@ -78,7 +79,7 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 Object-aware audit распознаёт русские формы объектов (`документ`, `документа`, `справочник`, `регистр`) и извлекает имя вроде `ЗаказКлиента` перед построением точного retrieval plan.
 
-Блок `Execution audit` показывает список фактических MCP tool calls с режимом, статусом, длительностью и безопасным кодом ошибки. Кнопка `LOAD REPORT` загружает подробный human-readable report под этим блоком: summary, severity, объект, модуль, строки, risk, recommendation и evidence каждого finding. Поля `persistedFindings` берутся из сохранённых записей PostgreSQL, поэтому UI показывает канонический результат после worker, а не только исходный ответ модели.
+Блок `История задач` показывает последние задачи и позволяет выбрать любую из них для повторной загрузки статуса, audit и report. `Execution audit` показывает список фактических MCP tool calls с режимом, статусом, длительностью и безопасным кодом ошибки. Кнопка `LOAD REPORT` загружает подробный human-readable report под этим блоком: summary, severity, объект, модуль, строки, risk, recommendation и evidence каждого finding. Поля `persistedFindings` берутся из сохранённых записей PostgreSQL, поэтому UI показывает канонический результат после worker, а не только исходный ответ модели.
 
 Проверка:
 

@@ -175,14 +175,26 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if not task.result_json:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report is not ready")
-    findings = db.scalars(select(Finding).where(Finding.task_id == task_id)).all()
+    findings = db.scalars(
+        select(Finding)
+        .where(Finding.task_id == task_id)
+        .order_by(Finding.created_at, Finding.id)
+    ).all()
     report = json.loads(task.result_json)
     report["persistedFindings"] = [
         {
             "id": item.id,
-            "severity": item.severity,
             "category": item.category,
+            "severity": item.severity,
+            "confidence": item.confidence,
             "objectFqn": item.object_fqn,
+            "module": item.module,
+            "method": item.method,
+            "lineStart": item.line_start,
+            "lineEnd": item.line_end,
+            "description": item.description,
+            "risk": item.risk,
+            "recommendation": item.recommendation,
             "evidence": json.loads(item.evidence_json),
         }
         for item in findings

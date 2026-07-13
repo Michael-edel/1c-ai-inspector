@@ -78,6 +78,8 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 Object-aware audit распознаёт русские формы объектов (`документ`, `документа`, `справочник`, `регистр`) и извлекает имя вроде `ЗаказКлиента` перед построением точного retrieval plan.
 
+Кнопка `LOAD REPORT` загружает подробный human-readable report под блоком `Execution audit`: summary, severity, объект, модуль, строки, risk, recommendation и evidence каждого finding.
+
 Проверка:
 
 ```powershell

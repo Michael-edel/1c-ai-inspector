@@ -32,7 +32,7 @@ const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).p
 const taskStatusLabel = (status: string) => taskStatusLabels[status] ?? "Подготовка";
 const taskStatusDescription = (status: string) => taskStatusDescriptions[status] ?? "Получаем состояние задачи.";
 const extractObjectReference = (text: string) => {
-  const match = text.match(/\b(документ\w*|справочник\w*|регистр\w*)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
+  const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
   if (!match) return null;
   const type = match[1].toLowerCase();
   return {

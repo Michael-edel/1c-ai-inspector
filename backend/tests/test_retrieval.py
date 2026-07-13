@@ -227,6 +227,39 @@ def test_retrieval_records_parent_task_timeout(tmp_path: Path) -> None:
     assert error.value.calls[0]["errorCode"] == "TASK_TIMEOUT"
 
 
+def test_retrieval_rejects_an_oversized_mcp_result(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "result": {"content": [{"type": "text", "text": "x" * 100}]},
+            },
+        )
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": {}}]},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                McpConnector("http://mcp.test", snapshot, transport=httpx.MockTransport(handler)),
+                max_result_chars=50,
+            )
+        )
+
+    assert error.value.code == "MCP_RESULT_TOO_LARGE"
+    assert error.value.calls[0]["errorCode"] == "MCP_RESULT_TOO_LARGE"
+
+
 def test_object_aware_search_context_keeps_matching_modules() -> None:
     output = {
         "content": [

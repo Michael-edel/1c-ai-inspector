@@ -1,10 +1,11 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.agents.executor import execute_agent
+from app.agents.executor import AgentExecutionError, execute_agent
 from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.modeling import ModelResult
@@ -34,6 +35,28 @@ class SchemaCheckingAdapter(FakeAdapter):
         assert "StructuredReport JSON Schema" in messages[0]["content"]
         assert '"taskId"' in messages[0]["content"]
         return super().complete(messages)
+
+
+class TooManyFindingsAdapter(FakeAdapter):
+    def complete(self, messages: list[dict[str, str]]) -> ModelResult:
+        report = json.loads(super().complete(messages).content)
+        finding = {
+            "category": "business_logic",
+            "severity": "low",
+            "confidence": 0.8,
+            "objectFqn": "Документ.ЗаказКлиента",
+            "module": "Документ.ЗаказКлиента.МодульОбъекта",
+            "description": "Issue",
+            "risk": "Risk",
+            "recommendation": "Fix",
+            "evidence": [{
+                "type": "reference",
+                "objectFqn": "Документ.ЗаказКлиента",
+                "module": "Документ.ЗаказКлиента.МодульОбъекта",
+            }],
+        }
+        report["findings"] = [finding, finding]
+        return ModelResult(json.dumps(report, ensure_ascii=False), 3, 5)
 
 
 class SourceEvidenceAdapter(FakeAdapter):
@@ -111,6 +134,31 @@ def test_agent_execution_persists_model_usage() -> None:
         usage = session.scalars(select(ModelUsage).where(ModelUsage.task_id == task.id)).one()
         assert usage.input_tokens == 3
         assert usage.output_tokens == 5
+
+
+def test_agent_execution_rejects_too_many_findings() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_findings_limit",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "inspect"}),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+
+        with pytest.raises(AgentExecutionError, match="FINDINGS_LIMIT_EXCEEDED"):
+            execute_agent(
+                session,
+                task,
+                AgentRegistry().get("1c_code_assistant"),
+                get_settings().model_copy(update={"max_findings": 1}),
+                TooManyFindingsAdapter(),
+            )
 
 
 def test_agent_prompt_contains_structured_report_schema() -> None:

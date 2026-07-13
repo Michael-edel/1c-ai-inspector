@@ -247,6 +247,8 @@ def execute_agent(
     except (ValueError, TypeError) as exc:
         raise AgentExecutionError("MODEL_REPORT_INVALID") from exc
 
+    if len(report.findings) > settings.max_findings:
+        raise AgentExecutionError("FINDINGS_LIMIT_EXCEEDED")
     if report.task_id != task.id:
         raise AgentExecutionError("MODEL_REPORT_TASK_MISMATCH")
     report = _validate_source_evidence(report, extra_context)

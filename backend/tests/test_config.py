@@ -65,3 +65,14 @@ def test_worker_heartbeat_interval_defaults_to_safe_value() -> None:
 
     assert settings.worker_heartbeat_interval_sec == 15
     assert settings.worker_heartbeat_interval_sec < settings.worker_lease_timeout_sec
+
+
+def test_execution_limits_have_safe_defaults_and_reject_zero() -> None:
+    settings = make_settings()
+
+    assert settings.max_result_chars == 500_000
+    assert settings.max_findings == 100
+    with pytest.raises(ValidationError):
+        make_settings(max_result_chars=0)
+    with pytest.raises(ValidationError):
+        make_settings(max_findings=0)

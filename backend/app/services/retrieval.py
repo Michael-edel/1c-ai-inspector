@@ -35,6 +35,10 @@ def tool_call_fingerprint(tool_name: str, arguments: dict[str, Any]) -> str:
     )
 
 
+def _serialized_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
 def _compact_search_output(output: Any, query: str, category: Any, module: Any) -> Any:
     if not isinstance(output, dict) or not isinstance(query, str) or not query.strip():
         return output
@@ -81,6 +85,7 @@ async def retrieve_task_context(
     completed_calls: dict[str, dict[str, Any]] | None = None,
     on_tool_call: Callable[[dict[str, Any]], None] | None = None,
     deadline: float | None = None,
+    max_result_chars: int | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -113,6 +118,8 @@ async def retrieve_task_context(
             output = cached_call.get("output")
             if not isinstance(output, dict):
                 output = {}
+            if max_result_chars is not None and _serialized_size(output) > max_result_chars:
+                raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
             compacted_output = (
                 _compact_search_output(
                     output,
@@ -165,6 +172,19 @@ async def retrieve_task_context(
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
+        if max_result_chars is not None and _serialized_size(output) > max_result_chars:
+            call = {
+                "toolName": tool_name,
+                "input": arguments,
+                "output": None,
+                "status": "failed",
+                "errorCode": "MCP_RESULT_TOO_LARGE",
+                "durationMs": int((time.perf_counter() - started) * 1000),
+            }
+            calls.append(call)
+            if on_tool_call is not None:
+                on_tool_call(call)
+            raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
         compacted_output = _compact_search_output(
             output,
             arguments.get("query", ""),

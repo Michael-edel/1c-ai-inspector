@@ -290,6 +290,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         completed_calls=completed_calls,
                         on_tool_call=lambda call: persist_tool_call(session, task_id, call, lease_owner),
                         deadline=task_deadline,
+                        max_result_chars=settings.max_result_chars,
                     )
                 finally:
                     await connector.close()
@@ -305,8 +306,12 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                     if task is not None and task.status == TaskStatus.RUNNING.value:
                         finalize_task_cancellation(session, task, actor="worker")
                 return True
-            if isinstance(exc, RetrievalError) and exc.code == "TASK_TIMEOUT":
-                raise AgentExecutionError("TASK_TIMEOUT") from exc
+            if isinstance(exc, RetrievalError) and exc.code in {
+                "TASK_TIMEOUT",
+                "MCP_RESULT_TOO_LARGE",
+                "MCP_TOOL_CALL_FAILED",
+            }:
+                raise AgentExecutionError(exc.code) from exc
             if isinstance(exc, RetrievalError) and exc.code == "NON_IDEMPOTENT_RETRY_BLOCKED":
                 raise AgentExecutionError(exc.code) from exc
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc

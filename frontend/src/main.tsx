@@ -41,6 +41,8 @@ const extractObjectReference = (text: string) => {
     category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
   };
 };
+const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
+const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
 const retrievalPlanForAgent = (agentCode: string, text: string) => {
   const query = text.trim();
   const object = extractObjectReference(query);
@@ -137,6 +139,7 @@ function App() {
 
   useEffect(() => { void refresh(); }, []);
   const canCreateTask = readiness?.status === "ready";
+  const shouldUseAuditAgent = auditAgentMismatch(selectedAgent, taskText);
 
   useEffect(() => {
     if (!taskId || !taskStartedAt || isTerminalTaskStatus(taskStatus)) return;
@@ -196,6 +199,10 @@ function App() {
   const createTask = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canCreateTask || !taskText.trim() || !selectedProject) return;
+    if (shouldUseAuditAgent) {
+      setError("Этот запрос похож на аудит. Выберите профиль 1C Audit Agent.");
+      return;
+    }
     setMessage("");
     setError("");
     try {

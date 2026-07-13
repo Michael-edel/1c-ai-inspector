@@ -38,6 +38,7 @@ const extractObjectReference = (text: string) => {
   return {
     name: match[2],
     type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : "InformationRegister",
+    category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
   };
 };
 const retrievalPlanForAgent = (agentCode: string, text: string) => {
@@ -52,7 +53,7 @@ const retrievalPlanForAgent = (agentCode: string, text: string) => {
   }
   if (agentCode === "1c_audit_agent" && object) {
     return [
-      { tool: "search_code", arguments: { query: searchQuery, limit: 10, mode: "smart" } },
+      { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: "МодульОбъекта", mode: "exact" } },
       { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
     ];
   }

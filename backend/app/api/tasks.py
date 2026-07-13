@@ -232,12 +232,26 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if not task.result_json:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Report is not ready")
+    snapshot = db.scalar(
+        select(PromptExecutionSnapshot)
+        .where(PromptExecutionSnapshot.task_id == task_id)
+        .order_by(PromptExecutionSnapshot.created_at.desc())
+    )
     findings = db.scalars(
         select(Finding)
         .where(Finding.task_id == task_id)
         .order_by(Finding.created_at, Finding.id)
     ).all()
     report = json.loads(task.result_json)
+    if snapshot is not None:
+        report["execution"] = {
+            "promptVersion": snapshot.prompt_version,
+            "modelProvider": snapshot.model_provider,
+            "modelName": snapshot.model_name,
+            "policyVersion": snapshot.policy_version,
+            "policyChecksum": snapshot.policy_checksum,
+            "toolsetChecksum": snapshot.toolset_checksum,
+        }
     report["persistedFindings"] = [
         {
             "id": item.id,

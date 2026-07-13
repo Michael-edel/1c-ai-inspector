@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.tasks import task_report
-from app.models import Base, Finding, Task
+from app.models import Base, Finding, PromptExecutionSnapshot, Task
 
 
 def test_task_report_returns_full_persisted_finding() -> None:
@@ -32,6 +32,16 @@ def test_task_report_returns_full_persisted_finding() -> None:
             request_json="{}",
             result_json=json.dumps({"taskId": "tsk_report", "findings": []}),
             available_at=datetime.now(timezone.utc),
+        ))
+        session.add(PromptExecutionSnapshot(
+            id="snap_report",
+            task_id="tsk_report",
+            prompt_version="1.0.0",
+            model_provider="openai",
+            model_name="test-model",
+            policy_version="1.1.0",
+            policy_checksum="policy-checksum",
+            toolset_checksum="toolset-checksum",
         ))
         session.add(Finding(
             id="fnd_report",
@@ -68,3 +78,11 @@ def test_task_report_returns_full_persisted_finding() -> None:
         "recommendation": "Validate transition",
         "evidence": evidence,
     }]
+    assert report["execution"] == {
+        "promptVersion": "1.0.0",
+        "modelProvider": "openai",
+        "modelName": "test-model",
+        "policyVersion": "1.1.0",
+        "policyChecksum": "policy-checksum",
+        "toolsetChecksum": "toolset-checksum",
+    }

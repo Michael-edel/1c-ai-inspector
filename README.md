@@ -102,6 +102,18 @@ Live acceptance после настройки `.env` запускается ко
 
 Скрипт отклоняет `execute_query`, write tools и findings без evidence.
 
+Единый UAT для трёх production-задач запускается после создания Code Assistant, Query Agent и Audit Agent задач:
+
+```powershell
+.\scripts\v07-uat.ps1 `
+  -BaseUrl https://inspector.michael.kz `
+  -CodeTaskId <code-task-id> `
+  -QueryTaskId <query-task-id> `
+  -AuditTaskId <audit-task-id>
+```
+
+Скрипт дополнительно сверяет report с `persistedFindings`, проверяет model/tool audit и наличие evidence у каждого сохраненного finding.
+
 Финальную приемку v0.2 Patch Planner запускайте при работающем Compose:
 
 ```powershell

@@ -136,6 +136,38 @@ def test_read_only_tool_retries_transient_http_failure(tmp_path: Path) -> None:
     assert calls == 2
 
 
+def test_non_idempotent_tool_does_not_retry_transient_http_failure(tmp_path: Path) -> None:
+    path = tmp_path / "non-idempotent-policy.yaml"
+    path.write_text(
+        "policyId: test\nversion: 1.0.0\ntools:\n"
+        "  Read Module.Source: {name: raw, category: bsl.read, mode: read-only, retries: 2, idempotent: false}\n",
+        encoding="utf-8",
+    )
+    policy = PolicyProvider(path).load()
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        calls += 1
+        return httpx.Response(503)
+
+    async def scenario() -> None:
+        connector = McpConnector("http://mcp.test", policy, transport=httpx.MockTransport(handler))
+        try:
+            await connector.call_tool("read_module_source", {})
+        finally:
+            await connector.close()
+
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(scenario())
+    assert calls == 1
+
+
 def test_bridge_transport_uses_rest_endpoints_and_bearer_token(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
 

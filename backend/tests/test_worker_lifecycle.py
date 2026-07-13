@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta, timezone
+import json
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.models import Agent, Base, McpServer, Project, Task, TaskEvent
-from app.worker import recover_stale_tasks, release_task_lease, task_allows_next_tool
+from app.models import Agent, Base, McpServer, Project, Task, TaskEvent, ToolCall
+from app.services.retrieval import tool_call_fingerprint
+from app.worker import load_completed_tool_calls, recover_stale_tasks, release_task_lease, task_allows_next_tool
 
 
 def make_worker_task(session: Session, status: str = "running") -> Task:
@@ -79,3 +81,32 @@ def test_tool_gate_refreshes_heartbeat_and_release_clears_lease() -> None:
     assert task.locked_by is None
     assert task.locked_at is None
     assert task.heartbeat_at is None
+
+
+def test_completed_tool_call_is_loaded_into_retry_cache() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        task = make_worker_task(session)
+        arguments = {"object": "Catalog.X"}
+        session.add(
+            ToolCall(
+                id="call_worker",
+                task_id=task.id,
+                tool_name="read_source",
+                mode="read-only",
+                status="completed",
+                input_json=json.dumps(arguments),
+                output_json=json.dumps({"content": []}),
+                duration_ms=18,
+            )
+        )
+        session.commit()
+
+        cache = load_completed_tool_calls(session, task.id)
+
+    cached = cache[tool_call_fingerprint("read_source", arguments)]
+    assert cached["status"] == "completed"
+    assert cached["output"] == {"content": []}
+    assert cached["durationMs"] == 18

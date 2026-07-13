@@ -95,7 +95,7 @@ class McpConnector:
                     "tools/call", {"name": contract.original_name, "arguments": arguments}
                 )
             except (httpx.RequestError, httpx.HTTPStatusError):
-                if attempt >= contract.retries:
+                if attempt >= contract.retries or not contract.idempotent:
                     raise
                 await asyncio.sleep(min(2**attempt, 5))
         raise RuntimeError("MCP retry loop ended unexpectedly")

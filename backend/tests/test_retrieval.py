@@ -8,14 +8,15 @@ import pytest
 from app.agents.registry import AgentRegistry
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
-from app.services.retrieval import RetrievalError, _compact_search_output, retrieve_task_context
+from app.services.retrieval import RetrievalError, _compact_search_output, retrieve_task_context, tool_call_fingerprint
 
 
-def _snapshot(tmp_path: Path):
+def _snapshot(tmp_path: Path, idempotent: bool = True):
     path = tmp_path / "policy.yaml"
+    idempotent_value = "true" if idempotent else "false"
     path.write_text(
         "policyId: test\nversion: 1.0.0\ntools:\n"
-        "  Read Source: {name: raw, category: bsl.read, mode: read-only}\n",
+        f"  Read Source: {{name: raw, category: bsl.read, mode: read-only, idempotent: {idempotent_value}}}\n",
         encoding="utf-8",
     )
     return PolicyProvider(path).load()
@@ -98,6 +99,67 @@ def test_failed_mcp_call_keeps_audit_record(tmp_path: Path) -> None:
             )
         )
     assert error.value.calls[0]["status"] == "failed"
+
+
+def test_retrieval_reuses_completed_idempotent_call(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    arguments = {"object": "Catalog.X"}
+    cached_output = {"content": [{"type": "text", "text": "cached source"}]}
+    connector = McpConnector(
+        "http://mcp.test",
+        snapshot,
+        transport=httpx.MockTransport(lambda _: pytest.fail("cached call must not reach MCP")),
+    )
+
+    result = asyncio.run(
+        retrieve_task_context(
+            {"retrieval": [{"tool": "read_source", "arguments": arguments}]},
+            AgentRegistry().get("1c_code_assistant"),
+            snapshot,
+            connector,
+            completed_calls={
+                tool_call_fingerprint("read_source", arguments): {
+                    "toolName": "read_source",
+                    "input": arguments,
+                    "output": cached_output,
+                    "status": "completed",
+                    "durationMs": 12,
+                }
+            },
+        )
+    )
+
+    assert result.calls[0]["reused"] is True
+    assert result.calls[0]["durationMs"] == 0
+    assert result.context[0]["data"] == cached_output
+
+
+def test_retrieval_blocks_cached_non_idempotent_call(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path, idempotent=False)
+    arguments = {"object": "Catalog.X"}
+    connector = McpConnector(
+        "http://mcp.test",
+        snapshot,
+        transport=httpx.MockTransport(lambda _: pytest.fail("blocked retry must not reach MCP")),
+    )
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": arguments}]},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                connector,
+                completed_calls={
+                    tool_call_fingerprint("read_source", arguments): {
+                        "output": {"content": []},
+                        "status": "completed",
+                    }
+                },
+            )
+        )
+
+    assert error.value.code == "NON_IDEMPOTENT_RETRY_BLOCKED"
 
 
 def test_retrieval_stops_before_next_tool_after_cancellation(tmp_path: Path) -> None:

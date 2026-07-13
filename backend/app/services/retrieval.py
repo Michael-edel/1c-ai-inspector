@@ -1,3 +1,4 @@
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -22,6 +23,16 @@ class RetrievalError(ValueError):
 class RetrievalResult:
     context: list[dict[str, Any]]
     calls: list[dict[str, Any]]
+
+
+def tool_call_fingerprint(tool_name: str, arguments: dict[str, Any]) -> str:
+    return json.dumps(
+        [tool_name, arguments],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
 
 
 def _compact_search_output(output: Any, query: str, category: Any, module: Any) -> Any:
@@ -67,6 +78,8 @@ async def retrieve_task_context(
     connector: McpConnector,
     max_tool_calls: int = 30,
     before_tool_call: Callable[[], bool] | None = None,
+    completed_calls: dict[str, dict[str, Any]] | None = None,
+    on_tool_call: Callable[[dict[str, Any]], None] | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -90,18 +103,48 @@ async def retrieve_task_context(
             raise RetrievalError("RETRIEVAL_CAPABILITY_NOT_ALLOWED")
         if before_tool_call is not None and not before_tool_call():
             raise RetrievalError("TASK_CANCELLED_BY_USER", calls)
+        cached_call = (completed_calls or {}).get(tool_call_fingerprint(tool_name, arguments))
+        if cached_call is not None:
+            if not contract.idempotent:
+                raise RetrievalError("NON_IDEMPOTENT_RETRY_BLOCKED", calls)
+            output = cached_call.get("output")
+            if not isinstance(output, dict):
+                output = {}
+            compacted_output = (
+                _compact_search_output(
+                    output,
+                    arguments.get("query", ""),
+                    arguments.get("category"),
+                    arguments.get("module"),
+                )
+                if tool_name == "search_code"
+                else output
+            )
+            calls.append({
+                "toolName": tool_name,
+                "input": arguments,
+                "output": compacted_output,
+                "status": "completed",
+                "durationMs": 0,
+                "reused": True,
+            })
+            context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
+            continue
         started = time.perf_counter()
         try:
             output = await connector.call_tool(tool_name, arguments)
         except Exception as exc:
-            calls.append({
+            call = {
                 "toolName": tool_name,
                 "input": arguments,
                 "output": None,
                 "status": "failed",
                 "errorCode": "MCP_TOOL_CALL_FAILED",
                 "durationMs": int((time.perf_counter() - started) * 1000),
-            })
+            }
+            calls.append(call)
+            if on_tool_call is not None:
+                on_tool_call(call)
             raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
         compacted_output = _compact_search_output(
             output,
@@ -109,12 +152,15 @@ async def retrieve_task_context(
             arguments.get("category"),
             arguments.get("module"),
         ) if tool_name == "search_code" else output
-        calls.append({
+        call = {
             "toolName": tool_name,
             "input": arguments,
             "output": compacted_output,
             "status": "completed",
             "durationMs": int((time.perf_counter() - started) * 1000),
-        })
+        }
+        calls.append(call)
+        if on_tool_call is not None:
+            on_tool_call(call)
         context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
     return RetrievalResult(context=context, calls=calls)

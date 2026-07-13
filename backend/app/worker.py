@@ -16,10 +16,10 @@ from app.db.session import get_session_factory
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
 from app.modeling import OpenAICompatibleAdapter
-from app.models import Agent, Task, TaskEvent
+from app.models import Agent, Task, TaskEvent, ToolCall
 from app.services.audit import AuditRecorder
 from app.services.findings import persist_findings
-from app.services.retrieval import RetrievalError, retrieve_task_context
+from app.services.retrieval import RetrievalError, retrieve_task_context, tool_call_fingerprint
 from app.services.task_cancellation import finalize_task_cancellation
 from app.services.task_state import validate_transition
 
@@ -54,6 +54,71 @@ def release_task_lease(task: Task) -> None:
     task.locked_by = None
     task.locked_at = None
     task.heartbeat_at = None
+
+
+def load_completed_tool_calls(session, task_id: str) -> dict[str, dict[str, object]]:
+    cache: dict[str, dict[str, object]] = {}
+    rows = session.scalars(
+        select(ToolCall)
+        .where(ToolCall.task_id == task_id, ToolCall.status == "completed")
+        .order_by(ToolCall.created_at)
+    ).all()
+    for row in rows:
+        try:
+            arguments = json.loads(row.input_json)
+            output = json.loads(row.output_json) if row.output_json else {}
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(arguments, dict):
+            continue
+        cache[tool_call_fingerprint(row.tool_name, arguments)] = {
+            "toolName": row.tool_name,
+            "input": arguments,
+            "output": output if isinstance(output, dict) else {},
+            "status": row.status,
+            "durationMs": row.duration_ms,
+        }
+    return cache
+
+
+def persist_tool_call(session, task_id: str, call: dict[str, object]) -> None:
+    with session.begin():
+        AuditRecorder(session).record_tool_call(
+            task_id,
+            call["toolName"],
+            "read-only",
+            call["input"],
+            call.get("output"),
+            call["status"],
+            call["durationMs"],
+            call.get("errorCode"),
+        )
+    call["persisted"] = True
+
+
+def record_retrieval_calls(session, task_id: str, calls: list[dict[str, object]]) -> None:
+    reused_count = 0
+    for call in calls:
+        if call.get("reused"):
+            reused_count += 1
+        if call.get("persisted") or call.get("reused"):
+            continue
+        AuditRecorder(session).record_tool_call(
+            task_id,
+            call["toolName"],
+            "read-only",
+            call["input"],
+            call.get("output"),
+            call["status"],
+            call["durationMs"],
+            call.get("errorCode"),
+        )
+    if reused_count:
+        AuditRecorder(session).record_event(
+            task_id,
+            "tool_call_reused",
+            {"count": reused_count, "reason": "IDEMPOTENT_RETRY"},
+        )
 
 
 def task_allows_next_tool(session, task_id: str) -> bool:
@@ -101,6 +166,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
 def process_one_task(lease_timeout_sec: int = 600) -> bool:
     session = get_session_factory()()
     task_id: str | None = None
+    completed_calls: dict[str, dict[str, object]] = {}
     try:
         with session.begin():
             task = claim_next_task(session, lease_timeout_sec)
@@ -126,6 +192,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 raise AgentExecutionError("AGENT_NOT_FOUND")
             agent_code = agent.code
             request_json = task.request_json
+            completed_calls = load_completed_tool_calls(session, task_id)
         settings = get_settings()
         definition = AgentRegistry().get(agent_code)
         snapshot = PolicyProvider(settings.mcp_policy_path).load()
@@ -146,6 +213,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         connector,
                         settings.max_tool_calls,
                         before_tool_call=lambda: task_allows_next_tool(session, task_id),
+                        completed_calls=completed_calls,
+                        on_tool_call=lambda call: persist_tool_call(session, task_id, call),
                     )
                 finally:
                     await connector.close()
@@ -154,23 +223,15 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         except (RetrievalError, ToolNotAllowedError, ValueError) as exc:
             if isinstance(exc, RetrievalError) and exc.calls:
                 with session.begin():
-                    for call in exc.calls:
-                        AuditRecorder(session).record_tool_call(
-                            task_id,
-                            call["toolName"],
-                            "read-only",
-                            call["input"],
-                            call["output"],
-                            call["status"],
-                            call["durationMs"],
-                            call.get("errorCode"),
-                        )
+                    record_retrieval_calls(session, task_id, exc.calls)
             if isinstance(exc, RetrievalError) and exc.code == "TASK_CANCELLED_BY_USER":
                 with session.begin():
                     task = session.get(Task, task_id)
                     if task is not None and task.status == TaskStatus.RUNNING.value:
                         finalize_task_cancellation(session, task, actor="worker")
                 return True
+            if isinstance(exc, RetrievalError) and exc.code == "NON_IDEMPOTENT_RETRY_BLOCKED":
+                raise AgentExecutionError(exc.code) from exc
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():
             task = session.get(Task, task_id)
@@ -179,17 +240,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if task.cancel_requested:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
-            for call in retrieval.calls:
-                AuditRecorder(session).record_tool_call(
-                    task_id,
-                    call["toolName"],
-                    "read-only",
-                    call["input"],
-                    call["output"],
-                    call["status"],
-                    call["durationMs"],
-                    call.get("errorCode"),
-                )
+            record_retrieval_calls(session, task_id, retrieval.calls)
         with session.begin():
             task = session.get(Task, task_id)
             if task is None:

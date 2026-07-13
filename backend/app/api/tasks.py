@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -232,3 +233,20 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         for item in findings
     ]
     return report
+
+
+@router.get("/{task_id}/report/export")
+def export_task_report(task_id: str, db: Session = Depends(get_db)) -> JSONResponse:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    payload = {
+        "taskId": task.id,
+        "status": task.status,
+        "report": task_report(task_id, db),
+        "audit": task_audit(task_id, db).model_dump(),
+    }
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": f'attachment; filename="{task.id}-report.json"'},
+    )

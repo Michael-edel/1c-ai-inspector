@@ -12,6 +12,10 @@ class ToolNotAllowedError(PermissionError):
     """Raised before a forbidden tool can reach the MCP server."""
 
 
+class McpTaskTimeoutError(RuntimeError):
+    """Raised when an MCP operation reaches the parent task deadline."""
+
+
 class McpConnector:
     def __init__(
         self,
@@ -32,24 +36,31 @@ class McpConnector:
         self._initialized = False
         self._protocol_version = "2025-06-18"
 
-    async def initialize(self) -> dict[str, Any]:
+    async def initialize(self, deadline: float | None = None) -> dict[str, Any]:
         if self._initialized:
             return {}
         if self.transport_mode == "bridge":
-            result = await self._bridge_request("GET", "/health")
+            result = await self._await_with_deadline(
+                self._bridge_request("GET", "/health"), deadline
+            )
             self._initialized = True
             return result
-        result = await self._request(
-            "initialize",
-            {
-                "protocolVersion": self._protocol_version,
-                "capabilities": {},
-                "clientInfo": {"name": "1c-ai-inspector", "version": "0.1.0"},
-            },
+        result = await self._await_with_deadline(
+            self._request(
+                "initialize",
+                {
+                    "protocolVersion": self._protocol_version,
+                    "capabilities": {},
+                    "clientInfo": {"name": "1c-ai-inspector", "version": "0.1.0"},
+                },
+            ),
+            deadline,
         )
         self._initialized = True
         try:
-            await self._notify("notifications/initialized", {})
+            await self._await_with_deadline(
+                self._notify("notifications/initialized", {}), deadline
+            )
         except Exception:
             self._initialized = False
             raise
@@ -76,7 +87,12 @@ class McpConnector:
             )
         return discovered
 
-    async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
         contract = self.policy.published_tools.get(name)
         if contract is None:
             contract = self.policy.contract_for_raw_name(name)
@@ -84,18 +100,44 @@ class McpConnector:
             raise ToolNotAllowedError(f"MCP tool is not published: {name}")
         if contract.original_name is None:
             raise ToolNotAllowedError(f"MCP tool has no original name: {name}")
-        await self.initialize()
+        await self.initialize(deadline)
         for attempt in range(contract.retries + 1):
+            remaining = None if deadline is None else deadline - asyncio.get_running_loop().time()
+            if remaining is not None and remaining <= 0:
+                raise McpTaskTimeoutError("TASK_TIMEOUT")
+            timeout = contract.timeout_sec if remaining is None else min(contract.timeout_sec, remaining)
+            deadline_limited = remaining is not None and remaining <= contract.timeout_sec
             try:
                 return await asyncio.wait_for(
                     self._call_tool_once(contract.original_name, arguments),
-                    timeout=contract.timeout_sec,
+                    timeout=timeout,
                 )
-            except (httpx.RequestError, httpx.HTTPStatusError, asyncio.TimeoutError):
+            except McpTaskTimeoutError:
+                raise
+            except (httpx.RequestError, httpx.HTTPStatusError, asyncio.TimeoutError) as exc:
+                if isinstance(exc, asyncio.TimeoutError) and deadline_limited:
+                    raise McpTaskTimeoutError("TASK_TIMEOUT") from exc
                 if attempt >= contract.retries or not contract.idempotent:
                     raise
-                await asyncio.sleep(min(2**attempt, 5))
+                await self._await_with_deadline(
+                    asyncio.sleep(min(2**attempt, 5)), deadline
+                )
         raise RuntimeError("MCP retry loop ended unexpectedly")
+
+    @staticmethod
+    async def _await_with_deadline(awaitable: Any, deadline: float | None) -> Any:
+        if deadline is None:
+            return await awaitable
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            close = getattr(awaitable, "close", None)
+            if close is not None:
+                close()
+            raise McpTaskTimeoutError("TASK_TIMEOUT")
+        try:
+            return await asyncio.wait_for(awaitable, timeout=remaining)
+        except asyncio.TimeoutError as exc:
+            raise McpTaskTimeoutError("TASK_TIMEOUT") from exc
 
     async def _call_tool_once(self, original_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self.transport_mode == "bridge":

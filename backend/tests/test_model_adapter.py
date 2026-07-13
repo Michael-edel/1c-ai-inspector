@@ -1,9 +1,11 @@
 import json
+import time
 
 import httpx
+import pytest
 
 from app.core.config import get_settings
-from app.modeling import OpenAICompatibleAdapter
+from app.modeling import ModelTimeoutError, OpenAICompatibleAdapter
 
 
 def test_openai_compatible_adapter_parses_content_and_usage() -> None:
@@ -59,3 +61,14 @@ def test_gpt5_adapter_uses_model_default_temperature() -> None:
         settings, transport=httpx.MockTransport(handler)
     ).complete([])
     assert json.loads(result.content) == {"ok": True}
+
+
+def test_model_adapter_rejects_an_expired_parent_deadline() -> None:
+    adapter = OpenAICompatibleAdapter(
+        get_settings(),
+        transport=httpx.MockTransport(lambda _: pytest.fail("expired task must not call model")),
+        deadline=time.monotonic() - 1,
+    )
+
+    with pytest.raises(ModelTimeoutError, match="TASK_TIMEOUT"):
+        adapter.complete([])

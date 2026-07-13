@@ -13,6 +13,7 @@ Public API responses and the UI use stable codes without returning stack traces,
 | `TASK_CANCELLED_BY_USER` | — | Задача отменена пользователем. | Terminal `cancelled`; no automatic retry. |
 | `RETRIEVAL_PLAN_INVALID` | — | Не удалось подготовить read-only контекст. | Task becomes `failed`; audit records the failed stage. |
 | `MCP_TOOL_CALL_FAILED` | — | MCP временно недоступен. | Task becomes `failed`; only policy-approved transport retries apply. |
+| `TASK_TIMEOUT` | — | Задача превысила допустимое время. | Task becomes `failed`; no automatic retry. |
 | `NON_IDEMPOTENT_RETRY_BLOCKED` | — | Повтор неидемпотентного read-only вызова заблокирован. | Task becomes `failed`; inspect the audit and retry only as a new reviewed task. |
 | `CONTEXT_LIMIT_EXCEEDED` | — | Контекст задачи слишком большой. | Task becomes `failed`; reduce scope and create a new task. |
 | `MODEL_REPORT_INVALID` | — | Модель вернула неподдерживаемый отчёт. | Task becomes `failed`; no findings are persisted. |

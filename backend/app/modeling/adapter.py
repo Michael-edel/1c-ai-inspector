@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import time
 from typing import Protocol
 
 import httpx
@@ -22,10 +23,20 @@ class ModelError(RuntimeError):
     """Raised when the configured model cannot produce a usable response."""
 
 
+class ModelTimeoutError(ModelError):
+    """Raised when the model reaches the parent task deadline."""
+
+
 class OpenAICompatibleAdapter:
-    def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        transport: httpx.BaseTransport | None = None,
+        deadline: float | None = None,
+    ):
         self.settings = settings
         self.transport = transport
+        self.deadline = deadline
 
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         url = f"{str(self.settings.model_api_url).rstrip('/')}/chat/completions"
@@ -37,7 +48,15 @@ class OpenAICompatibleAdapter:
             }
             if not self.settings.model_name.lower().startswith("gpt-5"):
                 payload["temperature"] = 0
-            with httpx.Client(timeout=self.settings.task_timeout_sec, transport=self.transport) as client:
+            deadline_limited = False
+            timeout = float(self.settings.task_timeout_sec)
+            if self.deadline is not None:
+                remaining = self.deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ModelTimeoutError("TASK_TIMEOUT")
+                timeout = min(timeout, remaining)
+                deadline_limited = remaining <= self.settings.task_timeout_sec
+            with httpx.Client(timeout=timeout, transport=self.transport) as client:
                 response = client.post(
                     url,
                     headers={"Authorization": f"Bearer {self.settings.model_api_key}"},
@@ -45,6 +64,12 @@ class OpenAICompatibleAdapter:
                 )
                 response.raise_for_status()
                 body = response.json()
+        except ModelTimeoutError:
+            raise
+        except httpx.TimeoutException as exc:
+            if self.deadline is not None and deadline_limited:
+                raise ModelTimeoutError("TASK_TIMEOUT") from exc
+            raise ModelError("MODEL_REQUEST_FAILED") from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise ModelError("MODEL_REQUEST_FAILED") from exc
 

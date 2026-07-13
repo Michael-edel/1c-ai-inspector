@@ -85,7 +85,7 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 При cooperative cancel worker проверяет флаг перед каждым новым retrieval tool call, обновляет heartbeat, сохраняет уже завершённые calls и переводит задачу в `cancelled` до запуска следующего MCP-вызова или модели. Terminal-задачи освобождают worker lease; зависшая running-задача возвращается в очередь с событием `task_recovered` и кодом `WORKER_LEASE_EXPIRED`. Каждый фактический retrieval call сохраняется сразу после ответа MCP; при recovery совпадающий завершённый вызов переиспользуется по fingerprint `tool + arguments`, но только для idempotent contract, поэтому повторный MCP-вызов не выполняется.
 
-Worker поддерживает heartbeat отдельным циклом с интервалом `WORKER_HEARTBEAT_INTERVAL_SEC` во время MCP retrieval и вызова модели; Compose передаёт эту настройку только worker-контейнеру, а значение должно быть меньше `WORKER_LEASE_TIMEOUT_SEC`, иначе backend не стартует. Каждая задача получает уникальный lease owner: после recovery старый worker не может обновить heartbeat, сохранить tool call или записать report поверх нового владельца. Каждый опубликованный MCP contract ограничивает отдельный `tools/call` своим `timeout_sec`; повторяются только разрешённые idempotent-вызовы. HTTP-вызов модели ограничен `TASK_TIMEOUT_SEC`.
+Worker поддерживает heartbeat отдельным циклом с интервалом `WORKER_HEARTBEAT_INTERVAL_SEC` во время MCP retrieval и вызова модели; Compose передаёт эту настройку только worker-контейнеру, а значение должно быть меньше `WORKER_LEASE_TIMEOUT_SEC`, иначе backend не стартует. Каждая задача получает уникальный lease owner: после recovery старый worker не может обновить heartbeat, сохранить tool call или записать report поверх нового владельца. `TASK_TIMEOUT_SEC` задаёт общий deadline выполнения от claim до report: MCP-вызов получает минимум из contract `timeout_sec` и оставшегося времени задачи, модель получает тот же остаток. Истечение deadline сохраняется как стабильная ошибка `TASK_TIMEOUT` без автоматического повтора.
 
 Если задача завершилась со статусом `failed` или отчёт не получил исходный модуль, обновите состояние панели и создайте новую задачу. Для аудита выбирайте `1C Audit Agent`; UI не отправляет явный audit-запрос с другим профилем, чтобы не получить нерелевантный read-only контекст.
 
@@ -234,7 +234,7 @@ MCP discovery получает `tools/list`, принимает только и�
 
 Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сначала сохраняется строка task, затем связанный execution snapshot и событие создания; задача получает `queued`, worker атомарно переводит её в `running`, после чего разрешены только `completed`, `failed` или `cancelled`. Сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
 
-Отмена задачи не прерывает уже выполняющийся HTTP-вызов MCP или модель принудительно. API сохраняет `cancel_requested`, worker проверяет флаг перед retrieval, сохранением tool calls и вызовом модели, после чего переводит задачу в `cancelled` и пишет audit event. Завершённые и failed-задачи повторно отменить нельзя.
+Отмена задачи не прерывает уже выполняющийся HTTP-вызов MCP или модель принудительно, но общий deadline ограничивает их длительность. API сохраняет `cancel_requested`, worker проверяет флаг перед retrieval, сохранением tool calls и вызовом модели, после чего переводит задачу в `cancelled` и пишет audit event. При истечении deadline worker переводит задачу в `failed`, сохраняет `TASK_TIMEOUT` и не запускает следующий этап. Завершённые и failed-задачи повторно отменить нельзя.
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 
@@ -248,6 +248,7 @@ Agent retrieval принимает только явный `request.retrieval` p
 Для read-only tools policy может задать ограниченное число повторов через `retries`; повторяются только transport/HTTP ошибки.
 
 MCP connector использует Streamable HTTP session lifecycle: `initialize`, `notifications/initialized`, `Mcp-Session-Id`, `MCP-Protocol-Version`, повторное использование клиента и уникальные JSON-RPC request ids с проверкой response id. Ответы JSON и `text/event-stream` поддерживаются; project sync принимает list и вложенный `{projects: [...]}`.
+MCP connector также принимает deadline родительской задачи и не повторяет вызов после `TASK_TIMEOUT`.
 
 Для `sales-ai-manager/onec-mcp-bridge` доступен режим `MCP_TRANSPORT=bridge`: Inspector вызывает bridge endpoints `/health`, `/tools`, `/tools/call` и передаёт `MCP_BRIDGE_TOKEN` как Bearer token. Raw MCP режим остаётся `MCP_TRANSPORT=streamable-http`.
 
@@ -256,6 +257,7 @@ MCP connector использует Streamable HTTP session lifecycle: `initializ
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 
 Model adapter принимает JSON string, content blocks и JSON в markdown fence, после чего всё равно валидирует ответ как `StructuredReport`.
+Model adapter использует оставшееся время общего task deadline и не отправляет запрос при уже истёкшем deadline.
 Для моделей GPT-5 адаптер не передаёт `temperature=0`, потому что эти модели принимают только значение по умолчанию; для остальных OpenAI-compatible моделей сохраняется детерминированный `temperature=0`.
 Agent prompt получает фактическую JSON Schema `StructuredReport`, но итоговый ответ всё равно проверяется сервером перед сохранением task и findings.
 Telemetry в `StructuredReport` не доверяет значениям модели: model usage берётся из adapter, а tool usage — из фактически записанных retrieval calls и их длительности.

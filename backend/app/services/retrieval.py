@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.agents.registry import AgentDefinition
-from app.mcp.connector import McpConnector, ToolNotAllowedError
+from app.mcp.connector import McpConnector, McpTaskTimeoutError, ToolNotAllowedError
 from app.mcp.policy import PolicySnapshot
 
 
@@ -80,6 +80,7 @@ async def retrieve_task_context(
     before_tool_call: Callable[[], bool] | None = None,
     completed_calls: dict[str, dict[str, Any]] | None = None,
     on_tool_call: Callable[[dict[str, Any]], None] | None = None,
+    deadline: float | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -101,6 +102,8 @@ async def retrieve_task_context(
             raise ToolNotAllowedError(f"MCP tool is not published: {tool_name}")
         if contract.category not in allowed_categories:
             raise RetrievalError("RETRIEVAL_CAPABILITY_NOT_ALLOWED")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise RetrievalError("TASK_TIMEOUT", calls)
         if before_tool_call is not None and not before_tool_call():
             raise RetrievalError("TASK_CANCELLED_BY_USER", calls)
         cached_call = (completed_calls or {}).get(tool_call_fingerprint(tool_name, arguments))
@@ -132,7 +135,23 @@ async def retrieve_task_context(
             continue
         started = time.perf_counter()
         try:
-            output = await connector.call_tool(tool_name, arguments)
+            if deadline is None:
+                output = await connector.call_tool(tool_name, arguments)
+            else:
+                output = await connector.call_tool(tool_name, arguments, deadline=deadline)
+        except McpTaskTimeoutError as exc:
+            call = {
+                "toolName": tool_name,
+                "input": arguments,
+                "output": None,
+                "status": "failed",
+                "errorCode": "TASK_TIMEOUT",
+                "durationMs": int((time.perf_counter() - started) * 1000),
+            }
+            calls.append(call)
+            if on_tool_call is not None:
+                on_tool_call(call)
+            raise RetrievalError("TASK_TIMEOUT", calls) from exc
         except Exception as exc:
             call = {
                 "toolName": tool_name,

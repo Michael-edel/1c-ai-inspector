@@ -225,6 +225,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
     session = get_session_factory()()
     task_id: str | None = None
     lease_owner: str | None = None
+    task_claimed_at: float | None = None
+    task_deadline: float | None = None
     completed_calls: dict[str, dict[str, object]] = {}
     heartbeat_stop = threading.Event()
     heartbeat_thread: threading.Thread | None = None
@@ -235,6 +237,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 return False
             task_id = task.id
             lease_owner = task.locked_by
+            task_claimed_at = time.monotonic()
             session.add(
                 TaskEvent(
                     task_id=task_id,
@@ -256,6 +259,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             request_json = task.request_json
             completed_calls = load_completed_tool_calls(session, task_id)
         settings = get_settings()
+        assert task_claimed_at is not None
+        task_deadline = task_claimed_at + settings.task_timeout_sec
         heartbeat_thread = threading.Thread(
             target=heartbeat_loop,
             args=(task_id, lease_owner, settings.worker_heartbeat_interval_sec, heartbeat_stop),
@@ -284,6 +289,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         before_tool_call=lambda: task_allows_next_tool(session, task_id, lease_owner),
                         completed_calls=completed_calls,
                         on_tool_call=lambda call: persist_tool_call(session, task_id, call, lease_owner),
+                        deadline=task_deadline,
                     )
                 finally:
                     await connector.close()
@@ -299,6 +305,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                     if task is not None and task.status == TaskStatus.RUNNING.value:
                         finalize_task_cancellation(session, task, actor="worker")
                 return True
+            if isinstance(exc, RetrievalError) and exc.code == "TASK_TIMEOUT":
+                raise AgentExecutionError("TASK_TIMEOUT") from exc
             if isinstance(exc, RetrievalError) and exc.code == "NON_IDEMPOTENT_RETRY_BLOCKED":
                 raise AgentExecutionError(exc.code) from exc
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
@@ -313,15 +321,19 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if task.cancel_requested:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
+            if time.monotonic() >= task_deadline:
+                raise AgentExecutionError("TASK_TIMEOUT")
             report = execute_agent(
                 session,
                 task,
                 definition,
                 settings,
-                OpenAICompatibleAdapter(settings),
+                OpenAICompatibleAdapter(settings, deadline=task_deadline),
                 retrieval.context,
                 retrieval.calls,
             )
+            if time.monotonic() >= task_deadline:
+                raise AgentExecutionError("TASK_TIMEOUT")
             assert_task_lease(session, task_id, lease_owner)
             validate_transition(TaskStatus.RUNNING.value, report.status)
             task.status = report.status

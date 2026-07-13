@@ -91,3 +91,43 @@ def test_agent_prompt_contains_structured_report_schema() -> None:
             SchemaCheckingAdapter(),
         )
         assert report.status == "completed"
+
+
+def test_module_audit_marks_partial_source_context() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_partial_source",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "audit"}),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_audit_agent"),
+            get_settings(),
+            FakeAdapter(),
+            extra_context=[
+                {
+                    "source": "MCP",
+                    "tool": "search_code",
+                    "data": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "### Документ.ЗаказКлиента.МодульОбъекта\n```bsl\nВызов();\n```",
+                            }
+                        ]
+                    },
+                }
+            ],
+        )
+        assert report.source_coverage == "partial"
+        assert any("частичн" in item and "search_code" in item for item in report.limitations)
+        assert report.next_actions

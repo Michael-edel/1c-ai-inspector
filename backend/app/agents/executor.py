@@ -18,6 +18,25 @@ class AgentExecutionError(RuntimeError):
         self.code = code
 
 
+def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
+    has_search_context = False
+    for item in extra_context or []:
+        if item.get("tool") != "search_code":
+            continue
+        data = item.get("data")
+        if not isinstance(data, dict):
+            continue
+        if data.get("sourceComplete") is True:
+            return "full"
+        content = data.get("content")
+        if isinstance(content, list) and any(
+            isinstance(block, dict) and isinstance(block.get("text"), str) and block["text"].strip()
+            for block in content
+        ):
+            has_search_context = True
+    return "partial" if has_search_context else "none"
+
+
 def execute_agent(
     session: Session,
     task: Task,
@@ -70,9 +89,26 @@ def execute_agent(
 
     if report.task_id != task.id:
         raise AgentExecutionError("MODEL_REPORT_TASK_MISMATCH")
+    source_coverage = _source_coverage(extra_context)
+    limitations = list(report.limitations)
+    next_actions = list(report.next_actions)
+    if definition.task_kind == "module_audit" and source_coverage != "full":
+        limitation = (
+            "Полный исходный текст модуля не получен; findings основаны на частичных результатах search_code."
+            if source_coverage == "partial"
+            else "MCP не вернул исходный текст модуля; полноценный аудит и findings невозможны."
+        )
+        next_action = "Передать полный исходный модуль или подключить read-only source retrieval перед изменением кода."
+        if limitation not in limitations:
+            limitations.append(limitation)
+        if next_action not in next_actions:
+            next_actions.append(next_action)
     calls = tool_calls or []
     report = report.model_copy(
         update={
+            "source_coverage": source_coverage,
+            "limitations": limitations,
+            "next_actions": next_actions,
             "tool_usage": ToolUsage(
                 calls=len(calls),
                 duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),

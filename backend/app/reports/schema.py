@@ -3,6 +3,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+SourceCoverage = Literal["full", "partial", "none", "unknown"]
+
+
 class Evidence(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -58,6 +61,7 @@ class StructuredReport(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     objects_reviewed: list[str] = Field(default_factory=list, alias="objectsReviewed")
     validation: dict[str, Any] = Field(default_factory=dict)
+    source_coverage: SourceCoverage = Field(default="unknown", alias="sourceCoverage")
     tool_usage: ToolUsage = Field(alias="toolUsage")
     model_usage: ModelUsage = Field(alias="modelUsage")
     limitations: list[str] = Field(default_factory=list)

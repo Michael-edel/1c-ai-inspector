@@ -126,6 +126,7 @@ async def retrieve_task_context(
                 output = {}
             if max_result_chars is not None and _serialized_size(output) > max_result_chars:
                 raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
+            result_size_chars = _serialized_size(output)
             compacted_output = (
                 _compact_search_output(
                     output,
@@ -142,6 +143,7 @@ async def retrieve_task_context(
                 "output": compacted_output,
                 "status": "completed",
                 "durationMs": 0,
+                "resultSizeChars": result_size_chars,
                 "reused": True,
             })
             context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
@@ -178,7 +180,8 @@ async def retrieve_task_context(
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
-        if max_result_chars is not None and _serialized_size(output) > max_result_chars:
+        result_size_chars = _serialized_size(output)
+        if max_result_chars is not None and result_size_chars > max_result_chars:
             call = {
                 "toolName": tool_name,
                 "input": arguments,
@@ -186,6 +189,7 @@ async def retrieve_task_context(
                 "status": "failed",
                 "errorCode": "MCP_RESULT_TOO_LARGE",
                 "durationMs": int((time.perf_counter() - started) * 1000),
+                "resultSizeChars": result_size_chars,
             }
             calls.append(call)
             if on_tool_call is not None:
@@ -203,6 +207,7 @@ async def retrieve_task_context(
             "output": compacted_output,
             "status": "completed",
             "durationMs": int((time.perf_counter() - started) * 1000),
+            "resultSizeChars": result_size_chars,
         }
         calls.append(call)
         if on_tool_call is not None:

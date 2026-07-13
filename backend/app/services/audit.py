@@ -21,6 +21,7 @@ class AuditRecorder:
         status: str = "completed",
         duration_ms: int | None = None,
         error_code: str | None = None,
+        result_size_chars: int | None = None,
     ) -> str:
         call_id = f"call_{uuid4().hex}"
         self.session.add(
@@ -32,6 +33,7 @@ class AuditRecorder:
                 status=status,
                 input_json=json.dumps(input_payload, ensure_ascii=False),
                 output_json=json.dumps(output_payload, ensure_ascii=False) if output_payload else None,
+                result_size_chars=result_size_chars,
                 duration_ms=duration_ms,
                 error_code=error_code,
             )

@@ -139,6 +139,7 @@ def test_completed_tool_call_is_loaded_into_retry_cache() -> None:
                 status="completed",
                 input_json=json.dumps(arguments),
                 output_json=json.dumps({"content": []}),
+                result_size_chars=16,
                 duration_ms=18,
             )
         )
@@ -150,3 +151,4 @@ def test_completed_tool_call_is_loaded_into_retry_cache() -> None:
     assert cached["status"] == "completed"
     assert cached["output"] == {"content": []}
     assert cached["durationMs"] == 18
+    assert cached["resultSizeChars"] == 16

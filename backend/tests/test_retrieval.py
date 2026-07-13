@@ -258,6 +258,7 @@ def test_retrieval_rejects_an_oversized_mcp_result(tmp_path: Path) -> None:
 
     assert error.value.code == "MCP_RESULT_TOO_LARGE"
     assert error.value.calls[0]["errorCode"] == "MCP_RESULT_TOO_LARGE"
+    assert error.value.calls[0]["resultSizeChars"] > 50
 
 
 def test_retrieval_limits_read_source_module_reads(tmp_path: Path) -> None:

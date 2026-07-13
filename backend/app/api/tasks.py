@@ -323,6 +323,7 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "toolName": call.tool_name,
                 "mode": call.mode,
                 "status": call.status,
+                "resultSizeChars": call.result_size_chars,
                 "durationMs": call.duration_ms,
                 "errorCode": call.error_code,
             }

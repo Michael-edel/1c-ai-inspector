@@ -83,6 +83,7 @@ def load_completed_tool_calls(session, task_id: str) -> dict[str, dict[str, obje
             "output": output if isinstance(output, dict) else {},
             "status": row.status,
             "durationMs": row.duration_ms,
+            "resultSizeChars": row.result_size_chars,
         }
     return cache
 
@@ -113,6 +114,7 @@ def persist_tool_call(
             call["status"],
             call["durationMs"],
             call.get("errorCode"),
+            call.get("resultSizeChars"),
         )
     call["persisted"] = True
 
@@ -137,6 +139,7 @@ def record_retrieval_calls(
             call["status"],
             call["durationMs"],
             call.get("errorCode"),
+            call.get("resultSizeChars"),
         )
     if reused_count:
         AuditRecorder(session).record_event(

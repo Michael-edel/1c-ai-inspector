@@ -31,6 +31,19 @@ const taskStatusDescriptions: Record<string, string> = {
 const formatElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 const taskStatusLabel = (status: string) => taskStatusLabels[status] ?? "Подготовка";
 const taskStatusDescription = (status: string) => taskStatusDescriptions[status] ?? "Получаем состояние задачи.";
+const retrievalPlanForAgent = (agentCode: string, text: string) => {
+  const query = text.trim();
+  if (agentCode === "1c_query_agent") {
+    return [
+      { tool: "validate_query", arguments: { query } },
+      { tool: "get_metadata_tree", arguments: { query } },
+    ];
+  }
+  return [
+    { tool: "bsl_syntax_help", arguments: { query } },
+    { tool: "search_code", arguments: { query, limit: 5, mode: "smart" } },
+  ];
+};
 
 const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(path, options);
@@ -171,7 +184,7 @@ function App() {
       const created = await api<{ task_id: string; status: string }>("/api/v1/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: selectedProject, agentId: selectedAgent, request: { text: taskText.trim() } }),
+        body: JSON.stringify({ projectId: selectedProject, agentId: selectedAgent, request: { text: taskText.trim(), retrieval: retrievalPlanForAgent(selectedAgent, taskText) } }),
       });
       setTaskId(created.task_id);
       setTaskStatus(created.status || "queued");

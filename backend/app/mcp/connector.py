@@ -87,18 +87,24 @@ class McpConnector:
         await self.initialize()
         for attempt in range(contract.retries + 1):
             try:
-                if self.transport_mode == "bridge":
-                    return await self._bridge_request(
-                        "POST", "/tools/call", {"name": contract.original_name, "arguments": arguments}
-                    )
-                return await self._request(
-                    "tools/call", {"name": contract.original_name, "arguments": arguments}
+                return await asyncio.wait_for(
+                    self._call_tool_once(contract.original_name, arguments),
+                    timeout=contract.timeout_sec,
                 )
-            except (httpx.RequestError, httpx.HTTPStatusError):
+            except (httpx.RequestError, httpx.HTTPStatusError, asyncio.TimeoutError):
                 if attempt >= contract.retries or not contract.idempotent:
                     raise
                 await asyncio.sleep(min(2**attempt, 5))
         raise RuntimeError("MCP retry loop ended unexpectedly")
+
+    async def _call_tool_once(self, original_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self.transport_mode == "bridge":
+            return await self._bridge_request(
+                "POST", "/tools/call", {"name": original_name, "arguments": arguments}
+            )
+        return await self._request(
+            "tools/call", {"name": original_name, "arguments": arguments}
+        )
 
     async def close(self) -> None:
         if self._client is not None:

@@ -85,6 +85,8 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 При cooperative cancel worker проверяет флаг перед каждым новым retrieval tool call, обновляет heartbeat, сохраняет уже завершённые calls и переводит задачу в `cancelled` до запуска следующего MCP-вызова или модели. Terminal-задачи освобождают worker lease; зависшая running-задача возвращается в очередь с событием `task_recovered` и кодом `WORKER_LEASE_EXPIRED`. Каждый фактический retrieval call сохраняется сразу после ответа MCP; при recovery совпадающий завершённый вызов переиспользуется по fingerprint `tool + arguments`, но только для idempotent contract, поэтому повторный MCP-вызов не выполняется.
 
+Worker поддерживает heartbeat отдельным циклом с интервалом `WORKER_HEARTBEAT_INTERVAL_SEC` во время MCP retrieval и вызова модели; значение должно быть меньше `WORKER_LEASE_TIMEOUT_SEC`, иначе backend не стартует. Каждый опубликованный MCP contract ограничивает отдельный `tools/call` своим `timeout_sec`; повторяются только разрешённые idempotent-вызовы. HTTP-вызов модели ограничен `TASK_TIMEOUT_SEC`.
+
 Если задача завершилась со статусом `failed` или отчёт не получил исходный модуль, обновите состояние панели и создайте новую задачу. Для аудита выбирайте `1C Audit Agent`; UI не отправляет явный audit-запрос с другим профилем, чтобы не получить нерелевантный read-only контекст.
 
 Object-aware audit распознаёт русские формы объектов (`документ`, `документа`, `справочник`, `регистр`) и извлекает имя вроде `ЗаказКлиента` перед построением точного retrieval plan.

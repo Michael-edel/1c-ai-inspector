@@ -168,6 +168,39 @@ def test_non_idempotent_tool_does_not_retry_transient_http_failure(tmp_path: Pat
     assert calls == 1
 
 
+def test_tool_call_timeout_is_enforced_by_contract(tmp_path: Path) -> None:
+    path = tmp_path / "timeout-policy.yaml"
+    path.write_text(
+        "policyId: test\nversion: 1.0.0\ntools:\n"
+        "  Read Module.Source: {name: raw, category: bsl.read, mode: read-only, timeout_sec: 1}\n",
+        encoding="utf-8",
+    )
+    policy = PolicyProvider(path).load()
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        calls += 1
+        await asyncio.sleep(2)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+
+    async def scenario() -> None:
+        connector = McpConnector("http://mcp.test", policy, transport=httpx.MockTransport(handler))
+        try:
+            await connector.call_tool("read_module_source", {})
+        finally:
+            await connector.close()
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(scenario())
+    assert calls == 1
+
+
 def test_bridge_transport_uses_rest_endpoints_and_bearer_token(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
 

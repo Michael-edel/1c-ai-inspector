@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,12 +8,20 @@ from app.core.config import Settings
 
 def _settings_kwargs() -> dict[str, object]:
     return {
+        "_env_file": None,
         "database_url": "postgresql+psycopg://runtime:secret@localhost:5432/inspector",
         "migration_database_url": "postgresql+psycopg://migration:secret@localhost:5432/inspector",
         "mcp_server_url": "http://localhost:8001/mcp",
         "model_api_key": "model-secret",
         "inspector_auth_secret": "c" * 32,
+        "app_environment": "test",
     }
+
+
+def make_settings(**overrides: object) -> Settings:
+    values = _settings_kwargs()
+    values.update({"mcp_policy_path": Path("mcp_policy.yaml"), **overrides})
+    return Settings(**values)
 
 
 def test_secret_rotation_requires_a_deadline() -> None:
@@ -43,3 +53,15 @@ def test_jwks_mode_requires_external_issuer_configuration() -> None:
         inspector_package_signing_secret="s" * 32,
     )
     assert settings.inspector_auth_mode == "jwks"
+
+
+def test_worker_heartbeat_interval_must_be_less_than_lease_timeout() -> None:
+    with pytest.raises(ValidationError, match="WORKER_HEARTBEAT_INTERVAL_SEC"):
+        make_settings(worker_heartbeat_interval_sec=300, worker_lease_timeout_sec=300)
+
+
+def test_worker_heartbeat_interval_defaults_to_safe_value() -> None:
+    settings = make_settings()
+
+    assert settings.worker_heartbeat_interval_sec == 15
+    assert settings.worker_heartbeat_interval_sec < settings.worker_lease_timeout_sec

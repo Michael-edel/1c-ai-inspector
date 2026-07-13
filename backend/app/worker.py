@@ -4,6 +4,7 @@ import os
 import socket
 import time
 import asyncio
+import threading
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -121,18 +122,35 @@ def record_retrieval_calls(session, task_id: str, calls: list[dict[str, object]]
         )
 
 
+def refresh_task_heartbeat(session, task_id: str) -> bool:
+    task = session.get(Task, task_id)
+    if task is None or task.status != TaskStatus.RUNNING.value or task.cancel_requested:
+        return False
+    task.heartbeat_at = datetime.now(timezone.utc)
+    return True
+
+
 def task_allows_next_tool(session, task_id: str) -> bool:
     try:
-        task = session.get(Task, task_id)
-        if task is None or task.status != TaskStatus.RUNNING.value or task.cancel_requested:
-            session.rollback()
-            return False
-        task.heartbeat_at = datetime.now(timezone.utc)
+        allowed = refresh_task_heartbeat(session, task_id)
         session.commit()
-        return True
+        return allowed
     except Exception:
         session.rollback()
         raise
+
+
+def heartbeat_loop(task_id: str, interval_sec: int, stop_event: threading.Event) -> None:
+    while not stop_event.wait(interval_sec):
+        heartbeat_session = get_session_factory()()
+        try:
+            with heartbeat_session.begin():
+                if not refresh_task_heartbeat(heartbeat_session, task_id):
+                    return
+        except Exception:
+            logger.exception("Worker heartbeat refresh failed", extra={"task_id": task_id})
+        finally:
+            heartbeat_session.close()
 
 
 def claim_next_task(session, lease_timeout_sec: int = 600):
@@ -167,6 +185,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
     session = get_session_factory()()
     task_id: str | None = None
     completed_calls: dict[str, dict[str, object]] = {}
+    heartbeat_stop = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
     try:
         with session.begin():
             task = claim_next_task(session, lease_timeout_sec)
@@ -194,6 +214,13 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             request_json = task.request_json
             completed_calls = load_completed_tool_calls(session, task_id)
         settings = get_settings()
+        heartbeat_thread = threading.Thread(
+            target=heartbeat_loop,
+            args=(task_id, settings.worker_heartbeat_interval_sec, heartbeat_stop),
+            name=f"task-heartbeat-{task_id[:8]}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
         definition = AgentRegistry().get(agent_code)
         snapshot = PolicyProvider(settings.mcp_policy_path).load()
         try:
@@ -287,6 +314,9 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         logger.exception("Worker failed while processing a task")
         return False
     finally:
+        if heartbeat_thread is not None:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=5)
         session.close()
 
 

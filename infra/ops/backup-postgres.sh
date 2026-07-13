@@ -15,6 +15,12 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 umask 077
 
+cleanup_temp_files() {
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.tmp' -delete
+}
+
+trap cleanup_temp_files EXIT
+
 compose=(
   docker compose --env-file .env
   -f docker-compose.yml

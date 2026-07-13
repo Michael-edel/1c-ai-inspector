@@ -43,6 +43,103 @@ class TaskAuditResponse(BaseModel):
     model_usage: list[dict[str, object]]
 
 
+def _persist_task(
+    db: Session,
+    payload: TaskCreateRequest,
+    project: Project,
+    agent: Agent,
+    settings: Settings,
+    policy_snapshot,
+    task_status: str,
+    event_type: str,
+    event_payload: dict[str, object],
+    error_code: str | None = None,
+) -> Task:
+    now = datetime.now(timezone.utc)
+    task_id = f"tsk_{uuid4().hex}"
+    task = Task(
+        id=task_id,
+        project_id=project.id,
+        agent_id=agent.id,
+        status=task_status,
+        request_json=json.dumps(payload.request, ensure_ascii=False),
+        result_json=(
+            json.dumps(
+                {
+                    "taskId": task_id,
+                    "status": "failed",
+                    "summary": event_payload["reason"],
+                    "findings": [],
+                    "objectsReviewed": [],
+                    "validation": {"readOnly": True},
+                    "sourceCoverage": "none",
+                    "toolUsage": {"calls": 0, "durationMs": 0},
+                    "modelUsage": {"inputTokens": 0, "outputTokens": 0, "estimatedCost": 0},
+                    "limitations": [event_payload["reason"]],
+                    "nextActions": [],
+                },
+                ensure_ascii=False,
+            )
+            if task_status == TaskStatus.FAILED.value
+            else None
+        ),
+        available_at=now,
+        last_error_code=error_code,
+    )
+    execution_snapshot = PromptExecutionSnapshot(
+        id=f"snap_{uuid4().hex}",
+        task_id=task_id,
+        prompt_version=agent.prompt_version,
+        model_provider=settings.model_provider,
+        model_name=settings.model_name,
+        policy_version=policy_snapshot.policy.version,
+        policy_checksum=policy_snapshot.checksum,
+        toolset_checksum=policy_snapshot.toolset_checksum,
+    )
+    db.add(task)
+    db.flush()
+    db.add_all(
+        [
+            execution_snapshot,
+            TaskEvent(
+                task_id=task_id,
+                event_type=event_type,
+                payload_json=json.dumps(event_payload, ensure_ascii=False),
+            ),
+        ]
+    )
+    return task
+
+
+def _block_task(
+    db: Session,
+    payload: TaskCreateRequest,
+    project: Project,
+    agent: Agent,
+    settings: Settings,
+    policy_snapshot,
+    code: str,
+    reason: str,
+) -> None:
+    task = _persist_task(
+        db,
+        payload,
+        project,
+        agent,
+        settings,
+        policy_snapshot,
+        TaskStatus.FAILED.value,
+        "task_blocked",
+        {"source": "api", "code": code, "reason": reason},
+        code,
+    )
+    db.commit()
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": code, "reasons": [reason], "taskId": task.id},
+    )
+
+
 @router.get("")
 def list_tasks(db: Session = Depends(get_db)) -> list[dict[str, object]]:
     """Return safe task metadata for the operator history view."""
@@ -127,41 +224,60 @@ def create_task(
         db.flush()
 
     settings: Settings = request.app.state.settings
-    now = datetime.now(timezone.utc)
-    task_id = f"tsk_{uuid4().hex}"
-    task = Task(
-        id=task_id,
-        project_id=project.id,
-        agent_id=agent.id,
-        status=TaskStatus.QUEUED.value,
-        request_json=json.dumps(payload.request, ensure_ascii=False),
-        available_at=now,
-    )
-    execution_snapshot = PromptExecutionSnapshot(
-        id=f"snap_{uuid4().hex}",
-        task_id=task_id,
-        prompt_version=agent.prompt_version,
-        model_provider=settings.model_provider,
-        model_name=settings.model_name,
-        policy_version=snapshot.policy.version,
-        policy_checksum=snapshot.checksum,
-        toolset_checksum=snapshot.toolset_checksum,
-    )
-    db.add(task)
-    db.flush()
-    db.add_all(
-        [
-            execution_snapshot,
-            TaskEvent(
-                task_id=task_id,
-                event_type="task_created",
-                payload_json='{"source":"api"}',
-            ),
-        ]
+    if project.environment not in {"sandbox", "test"} or project.environment != getattr(settings, "app_environment", "sandbox"):
+        _block_task(
+            db,
+            payload,
+            project,
+            agent,
+            settings,
+            snapshot,
+            "PROJECT_ENVIRONMENT_NOT_ALLOWED",
+            f"Project environment '{project.environment}' is not allowed for this Inspector environment.",
+        )
+    try:
+        project_capabilities = json.loads(project.available_capabilities)
+    except (TypeError, ValueError):
+        project_capabilities = None
+    if not isinstance(project_capabilities, list) or any(not isinstance(item, str) for item in project_capabilities):
+        _block_task(
+            db,
+            payload,
+            project,
+            agent,
+            settings,
+            snapshot,
+            "PROJECT_CAPABILITIES_NOT_READY",
+            "Project capabilities are not available for the selected agent.",
+        )
+    try:
+        AgentRegistry().validate_capabilities(agent.code, set(project_capabilities))
+    except ValueError:
+        _block_task(
+            db,
+            payload,
+            project,
+            agent,
+            settings,
+            snapshot,
+            "PROJECT_CAPABILITIES_NOT_READY",
+            "Project capabilities do not satisfy the selected agent.",
+        )
+
+    task = _persist_task(
+        db,
+        payload,
+        project,
+        agent,
+        settings,
+        snapshot,
+        TaskStatus.QUEUED.value,
+        "task_created",
+        {"source": "api"},
     )
     db.commit()
     return TaskResponse(
-        task_id=task_id,
+        task_id=task.id,
         status=task.status,
         policy_version=snapshot.policy.version,
         toolset_checksum=snapshot.toolset_checksum,

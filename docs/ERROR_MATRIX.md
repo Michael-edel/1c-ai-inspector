@@ -6,6 +6,8 @@ Public API responses and the UI use stable codes without returning stack traces,
 | --- | ---: | --- | --- |
 | `REQUEST_TOO_LARGE` | 413 | Запрос слишком большой. | No task is created; reduce the request and retry. |
 | `AGENT_TOOLSET_NOT_READY` | 409 | MCP tools ещё не готовы. | No tool call; run discovery and retry task creation. |
+| `PROJECT_ENVIRONMENT_NOT_ALLOWED` | 409 | Проект нельзя запускать в текущем окружении Inspector. | Terminal blocked task is recorded in `task_events`; no tool call; select a matching sandbox/test project. |
+| `PROJECT_CAPABILITIES_NOT_READY` | 409 | У проекта недостаточно read-only capabilities для выбранного агента. | Terminal blocked task is recorded in `task_events`; no tool call; sync the project and retry. |
 | `TASK_NOT_FOUND` | 404 | Задача не найдена. | Refresh history; no state change. |
 | `TASK_NOT_CANCELLABLE` | 409 | Задачу уже нельзя отменить. | Terminal completed/failed state is unchanged. |
 | `TASK_CANCELLED_BY_USER` | — | Задача отменена пользователем. | Terminal `cancelled`; no automatic retry. |

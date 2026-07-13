@@ -80,6 +80,8 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
 
 const publicErrorMessages: Record<string, string> = {
   AGENT_TOOLSET_NOT_READY: "Инструменты MCP ещё не готовы. Обновите состояние и повторите попытку.",
+  PROJECT_ENVIRONMENT_NOT_ALLOWED: "Проект нельзя запускать в текущем окружении Inspector. Выберите проект той же среды.",
+  PROJECT_CAPABILITIES_NOT_READY: "У проекта недостаточно read-only capabilities для выбранного агента. Синхронизируйте проект и повторите попытку.",
   TASK_NOT_CANCELLABLE: "Задачу уже нельзя отменить: она завершена или завершилась ошибкой.",
   TASK_NOT_FOUND: "Задача не найдена. Обновите историю задач.",
   REQUEST_TOO_LARGE: "Запрос слишком большой.",

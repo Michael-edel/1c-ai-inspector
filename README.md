@@ -81,6 +81,8 @@ Frontend dependencies не коммитятся; `frontend/package-lock.json` ф
 
 В report API и блоке `Execution snapshot` отображаются версии prompt, модели, policy и toolset из неизменяемого execution snapshot задачи; checksums сокращены только визуально, полный JSON доступен через `EXPORT JSON`.
 
+Перед постановкой задачи API проверяет `project.environment` против `APP_ENVIRONMENT` и доступные capabilities выбранного агента. Несовпадение окружения или неполный read-only toolset создаёт terminal blocked task с событием `task_blocked`, стабильным кодом ошибки и нулевым числом MCP calls; `staging` и `production` не допускаются в v0.1.
+
 Если задача завершилась со статусом `failed` или отчёт не получил исходный модуль, обновите состояние панели и создайте новую задачу. Для аудита выбирайте `1C Audit Agent`; UI не отправляет явный audit-запрос с другим профилем, чтобы не получить нерелевантный read-only контекст.
 
 Object-aware audit распознаёт русские формы объектов (`документ`, `документа`, `справочник`, `регистр`) и извлекает имя вроде `ЗаказКлиента` перед построением точного retrieval plan.

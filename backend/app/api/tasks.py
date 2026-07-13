@@ -15,6 +15,7 @@ from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
+from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
 
@@ -69,6 +70,7 @@ def list_tasks(db: Session = Depends(get_db)) -> list[dict[str, object]]:
             "updatedAt": task.updated_at.isoformat(),
             "resultReady": task.result_json is not None,
             "lastErrorCode": task.last_error_code,
+            "cancelRequested": task.cancel_requested,
         }
         for task in tasks
     ]
@@ -85,6 +87,7 @@ def task_status(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         "attempt": task.attempt,
         "resultReady": task.result_json is not None,
         "lastErrorCode": task.last_error_code,
+        "cancelRequested": task.cancel_requested,
     }
 
 
@@ -163,6 +166,27 @@ def create_task(
         policy_version=snapshot.policy.version,
         toolset_checksum=snapshot.toolset_checksum,
     )
+
+
+@router.post("/{task_id}/cancel")
+def cancel_task(task_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    try:
+        request_task_cancellation(db, task, actor="api")
+    except TaskNotCancellable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": str(exc)},
+        ) from exc
+    db.commit()
+    return {
+        "taskId": task.id,
+        "status": task.status,
+        "cancelRequested": task.cancel_requested,
+        "lastErrorCode": task.last_error_code,
+    }
 
 
 @router.get("/{task_id}/audit", response_model=TaskAuditResponse)

@@ -52,6 +52,7 @@ Approval policy учитывает environment и impact risk: `sandbox` с по
 - `POST /api/v1/tasks` с Readiness Gate и execution snapshot.
 - `GET /api/v1/tasks` возвращает последние 50 задач для безопасной истории без исходного запроса и результата.
 - `GET /api/v1/tasks/{task_id}` для статуса, attempt и result readiness.
+- `POST /api/v1/tasks/{task_id}/cancel` для отмены queued-задачи или cooperative cancel выполняющейся задачи.
 - `GET /api/v1/agents` с тремя агентами v0.1.
 - React/Vite web UI на `http://localhost:5173`.
 - `GET /api/v1/tasks/{task_id}/audit` для task events, tool calls и model usage.
@@ -209,6 +210,8 @@ Readiness Gate возвращает `not_ready`, пока tools не обнар�
 MCP discovery получает `tools/list`, принимает только инструменты, перечисленные в policy, сохраняет нормализованный snapshot в PostgreSQL и отправляет на MCP Server исходное имя инструмента. Неизвестные инструменты отклоняются до сетевого запроса. Readiness становится `ready` только после успешного discovery и покрытия capabilities всех трёх агентов; policy без реальных EDT tool names остаётся `NOT READY`. PostgreSQL создаёт отдельные migration/runtime роли и default privileges для runtime-запросов.
 
 Task Orchestrator не создаёт агентную задачу, если toolset не готов: API возвращает `409 AGENT_TOOLSET_NOT_READY`. При успешном создании сначала сохраняется строка task, затем связанный execution snapshot и событие создания; задача получает `queued`, worker атомарно переводит её в `running`, после чего разрешены только `completed`, `failed` или `cancelled`. Сохраняются state, policy checksum, toolset checksum, prompt version и model snapshot.
+
+Отмена задачи не прерывает уже выполняющийся HTTP-вызов MCP или модель принудительно. API сохраняет `cancel_requested`, worker проверяет флаг перед retrieval, сохранением tool calls и вызовом модели, после чего переводит задачу в `cancelled` и пишет audit event. Завершённые и failed-задачи повторно отменить нельзя.
 
 Синхронизация проектов включается только при заданном `MCP_PROJECTS_TOOL`. Для MCP-сервера, который возвращает список проектов, укажите его read-only tool name. Для текущего локального `mcp-1c` используйте `MCP_PROJECTS_TOOL=get_configuration_info`: Inspector создаёт одну карточку проекта из фактов конфигурации 1С и capabilities активной policy. Имя должно быть опубликовано в `mcp_policy.yaml`; иначе вызов блокируется до сетевого запроса.
 

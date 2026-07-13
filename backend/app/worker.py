@@ -20,6 +20,7 @@ from app.models import Agent, Task, TaskEvent
 from app.services.audit import AuditRecorder
 from app.services.findings import persist_findings
 from app.services.retrieval import RetrievalError, retrieve_task_context
+from app.services.task_cancellation import finalize_task_cancellation
 from app.services.task_state import validate_transition
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,10 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
     task = session.execute(statement).scalar_one_or_none()
     if task is None:
         return None
+    if task.cancel_requested:
+        finalize_task_cancellation(session, task, actor="worker")
+        session.flush()
+        return None
     validate_transition(task.status, TaskStatus.RUNNING.value)
     task.status = TaskStatus.RUNNING.value
     task.locked_by = socket.gethostname()
@@ -72,6 +77,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
 
 def process_one_task(lease_timeout_sec: int = 600) -> bool:
     session = get_session_factory()()
+    task_id: str | None = None
     try:
         with session.begin():
             task = claim_next_task(session, lease_timeout_sec)
@@ -89,6 +95,9 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             task = session.get(Task, task_id)
             if task is None:
                 raise AgentExecutionError("TASK_NOT_FOUND")
+            if task.cancel_requested:
+                finalize_task_cancellation(session, task, actor="worker")
+                return True
             agent = session.get(Agent, task.agent_id)
             if agent is None:
                 raise AgentExecutionError("AGENT_NOT_FOUND")
@@ -134,6 +143,12 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         )
             raise AgentExecutionError("RETRIEVAL_FAILED") from exc
         with session.begin():
+            task = session.get(Task, task_id)
+            if task is None:
+                raise AgentExecutionError("TASK_NOT_FOUND")
+            if task.cancel_requested:
+                finalize_task_cancellation(session, task, actor="worker")
+                return True
             for call in retrieval.calls:
                 AuditRecorder(session).record_tool_call(
                     task_id,
@@ -149,6 +164,9 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             task = session.get(Task, task_id)
             if task is None:
                 raise AgentExecutionError("TASK_NOT_FOUND")
+            if task.cancel_requested:
+                finalize_task_cancellation(session, task, actor="worker")
+                return True
             report = execute_agent(
                 session,
                 task,
@@ -168,13 +186,22 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         with session.begin():
             task = session.get(Task, task_id)
             if task is not None:
-                task.status = TaskStatus.FAILED.value
-                task.last_error_code = exc.code
-                task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
-                AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
+                if task.cancel_requested:
+                    finalize_task_cancellation(session, task, actor="worker")
+                else:
+                    task.status = TaskStatus.FAILED.value
+                    task.last_error_code = exc.code
+                    task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
+                    AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
         return True
     except Exception:
         session.rollback()
+        if task_id is not None:
+            with session.begin():
+                task = session.get(Task, task_id)
+                if task is not None and task.cancel_requested and task.status == TaskStatus.RUNNING.value:
+                    finalize_task_cancellation(session, task, actor="worker")
+                    return True
         logger.exception("Worker failed while processing a task")
         return False
     finally:

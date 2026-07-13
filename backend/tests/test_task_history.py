@@ -49,6 +49,7 @@ def test_task_history_returns_safe_metadata_only() -> None:
         "updatedAt": history[0]["updatedAt"],
         "resultReady": True,
         "lastErrorCode": None,
+        "cancelRequested": False,
     }]
     assert "private request" not in str(history)
     assert "private result" not in str(history)

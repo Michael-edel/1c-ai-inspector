@@ -52,6 +52,7 @@ class Task(TimestampMixin, Base):
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     heartbeat_at: Mapped[datetime | None] = mapped_column()
     last_error_code: Mapped[str | None] = mapped_column(String(100))
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class TaskEvent(TimestampMixin, Base):

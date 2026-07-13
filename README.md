@@ -24,7 +24,7 @@ Approval transitions and first package-version creation lock the proposal row wi
 
 Каждый HTTP-запрос получает `X-Request-ID`; JSON logs содержат только method, path, status, duration и request id, без Authorization, body и query parameters. Aggregate metrics доступны через `GET /api/v1/system/metrics` с Bearer token.
 
-Матрица публичных ошибок и retry/state-поведения находится в `docs/ERROR_MATRIX.md`. Для production smoke используйте `.scriptserror-contract-acceptance.ps1 -BaseUrl https://inspector.michael.kz -CompletedTaskId <completed-task-id>`; скрипт проверяет только безопасные 404/409/401-контракты и не изменяет завершённую задачу.
+Матрица публичных ошибок и retry/state-поведения находится в `docs/ERROR_MATRIX.md`. Для production smoke используйте `.\scripts\error-contract-acceptance.ps1 -BaseUrl https://inspector.michael.kz -CompletedTaskId <completed-task-id>`; скрипт проверяет только безопасные 404/409/401-контракты и не изменяет завершённую задачу.
 
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 
@@ -171,6 +171,19 @@ Production PostgreSQL проходит Alembic migrations на чистой ба
 
 Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, отсутствие write tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
 
+Единый production acceptance запускается после создания трех завершенных read-only задач:
+
+```powershell
+.\scripts\final-production-acceptance.ps1 `
+  -BaseUrl https://inspector.michael.kz `
+  -CodeTaskId <code-task-id> `
+  -QueryTaskId <query-task-id> `
+  -AuditTaskId <audit-task-id> `
+  -LoadCount 20
+```
+
+После backup выполните на VPS `bash infra/ops/restore-drill.sh`. Скрипт берет свежие dump-файлы application PostgreSQL и Keycloak, восстанавливает их в одноразовые контейнеры `postgres:16-alpine` и удаляет контейнеры после проверки; рабочие базы и сервисы не изменяются. Максимальный возраст dump задается `MAX_AGE_HOURS` (по умолчанию 48).
+
 Единый release acceptance v0.6 запускается так:
 
 ```powershell
@@ -264,4 +277,4 @@ npm run build
 Синхронизация проектов и retrieval-контекст реализованы через конфигурируемые read-only MCP tools. Реальный запуск всё ещё требует рабочего EDT MCP endpoint, заполненной policy и ключа модели. Docker-образы запускаются от non-root пользователей и используют lockfile frontend dependencies.
 
 Перед runtime запуском проверьте `Invoke-RestMethod http://localhost:8000/api/v1/system/diagnostics`. Endpoint показывает только факт настройки API key (`true/false`), но не его значение.
-Production monitor проверяет health, security headers, readiness, policy, наличие минимум 8 MCP tools, синхронизированные проекты и отсутствие исходного запроса/результата в истории. Windows: .\scripts\production-monitor.ps1 -BaseUrl https://inspector.michael.kz. VPS: BASE_URL=https://inspector.michael.kz /opt/1c-ai-inspector/infra/ops/monitor.sh. Финальная acceptance-проверка выполняется скриптами v07-uat.ps1 и security-load-acceptance.ps1, затем запускается infra/ops/backup-postgres.sh.
+Production monitor проверяет health, security headers, readiness, policy, наличие минимум 8 MCP tools, синхронизированные проекты и отсутствие исходного запроса/результата в истории. Windows: .\scripts\production-monitor.ps1 -BaseUrl https://inspector.michael.kz. VPS: BASE_URL=https://inspector.michael.kz /opt/1c-ai-inspector/infra/ops/monitor.sh. Финальная acceptance-проверка выполняется единым `scripts/final-production-acceptance.ps1`, затем запускаются `infra/ops/backup-postgres.sh` и `infra/ops/restore-drill.sh`.

@@ -11,12 +11,15 @@ foreach ($header in @("X-Content-Type-Options", "X-Frame-Options", "Referrer-Pol
 if ($healthResponse.Headers["X-Content-Type-Options"] -ne "nosniff") { throw "Invalid content type security header" }
 if ($healthResponse.Headers["X-Frame-Options"] -ne "DENY") { throw "Invalid frame security header" }
 
+$metricsSucceeded = $false
 try {
     Invoke-RestMethod -Uri "$BaseUrl/api/v1/system/metrics" | Out-Null
-    throw "Unauthenticated metrics request unexpectedly succeeded"
+    $metricsSucceeded = $true
 } catch {
+    if (-not $_.Exception.Response) { throw }
     if ([int]$_.Exception.Response.StatusCode -ne 401) { throw }
 }
+if ($metricsSucceeded) { throw "Unauthenticated metrics request unexpectedly succeeded" }
 
 $policy = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "..\mcp_policy.yaml")
 if ($policy -match "(?im)^\s*mode:\s*write\s*$") { throw "Write tool found in published policy" }

@@ -38,7 +38,7 @@ dump_service() {
     'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
     > "$temp_path"
   test -s "$temp_path"
-  cat "$temp_path" | "${compose[@]}" exec -T "$service" pg_restore --list - >/dev/null
+  cat "$temp_path" | "${compose[@]}" exec -T "$service" pg_restore --list >/dev/null
   mv "$temp_path" "$final_path"
   echo "Created $final_path"
 }

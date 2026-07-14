@@ -35,16 +35,23 @@ dump_service() {
   local stamp
   local final_path
   local temp_path
+  local verify_path
 
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   final_path="$BACKUP_DIR/${prefix}-${stamp}.dump"
   temp_path="${final_path}.tmp"
+  verify_path="/tmp/${prefix}-${stamp}-verify.dump"
 
   "${compose[@]}" exec -T "$service" sh -lc \
     'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
     > "$temp_path"
   test -s "$temp_path"
-  cat "$temp_path" | "${compose[@]}" exec -T "$service" pg_restore --list >/dev/null
+  "${compose[@]}" cp "$temp_path" "$service:$verify_path"
+  if ! "${compose[@]}" exec -T "$service" pg_restore --list "$verify_path" >/dev/null; then
+    "${compose[@]}" exec -T "$service" rm -f "$verify_path" >/dev/null 2>&1 || true
+    return 1
+  fi
+  "${compose[@]}" exec -T "$service" rm -f "$verify_path"
   mv "$temp_path" "$final_path"
   echo "Created $final_path"
 }

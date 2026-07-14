@@ -43,6 +43,13 @@ SSH hardening evidence:
 - `ssh.service` remained active after configuration validation and reload;
 - emergency recovery remains available through the Contabo console/VNC and must be used only if key-based access is lost.
 
+Windows MCP continuity evidence:
+
+- `SalesAiManager-1C-MCP-Bridge` runs at Windows boot under `SYSTEM` and remains active while the bridge process is serving port `8091`;
+- duplicate bridge and Tunnel logon tasks are disabled after their XML definitions were backed up locally;
+- authenticated local and external bridge health checks both returned HTTP `200` after the scheduled bridge restart;
+- `sales-ai-onec-mcp-cloudflared` is running with Docker restart policy `unless-stopped`, and Docker Desktop is enabled in the Windows Startup registry and application settings.
+
 Commands used:
 
 ```powershell

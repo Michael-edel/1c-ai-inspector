@@ -1,6 +1,7 @@
 """Feature-flagged Sandbox Executor API."""
 
 import json
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -19,6 +20,7 @@ from app.models import (
 from app.services.auth import AuthContext
 from app.services.sandbox_audit import record_sandbox_event
 from app.services.sandbox_apply import SandboxApplyError, apply_verified_package
+from app.services.sandbox_command import SandboxCommandError, run_operator_command
 from app.services.sandbox_workflow import SandboxWorkflowError, validate_execution_request
 from app.services.sandbox_git import SandboxGitError, prepare_sandbox_worktree
 from app.services.sandbox_workflow import transition_sandbox_status
@@ -219,6 +221,74 @@ def apply_sandbox_execution(
         "sandbox_applied",
         identity.subject,
         {"changedPaths": list(result.changed_paths), "diffSha256": result.diff_sha256},
+    )
+    db.commit()
+    return _execution_response(execution)
+
+
+@router.post("/{execution_id}/validate")
+def validate_sandbox_execution(
+    execution_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    settings = request.app.state.settings
+    if not settings.sandbox_validation_command:
+        raise HTTPException(status_code=503, detail="SANDBOX_VALIDATION_NOT_CONFIGURED")
+    if not execution.worktree_path:
+        raise HTTPException(status_code=409, detail="SANDBOX_WORKTREE_NOT_PREPARED")
+    if execution.status != "validating":
+        raise HTTPException(status_code=409, detail="SANDBOX_STATE_TRANSITION_INVALID")
+    record_sandbox_event(db, execution.id, "sandbox_validation_started", identity.subject)
+    db.commit()
+    try:
+        result = run_operator_command(
+            settings.sandbox_validation_command,
+            Path(execution.worktree_path),
+            settings.sandbox_root,
+            settings.sandbox_command_timeout_sec,
+        )
+    except SandboxCommandError as exc:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = str(exc)
+        record_sandbox_event(
+            db,
+            execution.id,
+            "sandbox_validation_failed",
+            identity.subject,
+            {"errorCode": str(exc)},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution.validation_json = json.dumps(result.as_record(), ensure_ascii=False)
+    if result.succeeded:
+        execution.status = transition_sandbox_status(execution.status, "testing")
+        execution.last_error_code = None
+        event_type = "sandbox_validation_passed"
+    else:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = (
+            "SANDBOX_VALIDATION_TIMEOUT" if result.timed_out else "SANDBOX_VALIDATION_FAILED"
+        )
+        event_type = "sandbox_validation_failed"
+    record_sandbox_event(
+        db,
+        execution.id,
+        event_type,
+        identity.subject,
+        {
+            "exitCode": result.exit_code,
+            "durationMs": result.duration_ms,
+            "outputBytes": result.output_bytes,
+            "outputSha256": result.output_sha256,
+            "timedOut": result.timed_out,
+        },
     )
     db.commit()
     return _execution_response(execution)

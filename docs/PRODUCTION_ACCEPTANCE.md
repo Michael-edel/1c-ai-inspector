@@ -50,6 +50,15 @@ Windows MCP continuity evidence:
 - authenticated local and external bridge health checks both returned HTTP `200` after the scheduled bridge restart;
 - `sales-ai-onec-mcp-cloudflared` is running with Docker restart policy `unless-stopped`, and Docker Desktop is enabled in the Windows Startup registry and application settings.
 
+MCP bridge secret rotation evidence:
+
+- `scripts/rotate-mcp-bridge-token.ps1` rotated the Windows `ONEC_MCP_BRIDGE_TOKEN` and production `MCP_BRIDGE_TOKEN` as one fail-safe operation on 2026-07-14;
+- backend and worker were recreated without changing the remaining production stack, and the Windows boot task was restarted;
+- the new token returned HTTP `200` from both local and external bridge health endpoints, while the retired token returned `401`/`403`;
+- the post-rotation production monitor returned health `ok`, readiness `ready`, 9 MCP tools and 1 project;
+- the production secret audit passed without printing values, and root-only pre-rotation env snapshots remain in `/var/backups/1c-ai-inspector`;
+- the current token was written only to `D:\пароль.txt`, whose ACL contains three explicit full-control rules for the current Windows user, `SYSTEM` and built-in administrators, with no inherited rules.
+
 Off-site backup evidence:
 
 - `scripts/download-production-backups.ps1` downloaded the latest application and Keycloak dumps to `D:\Backups\1c-ai-inspector`;

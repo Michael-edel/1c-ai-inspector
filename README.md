@@ -2,6 +2,8 @@
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
+Документы контура: [Security Model](docs/SECURITY_MODEL.md), [Architecture Overview](docs/ARCHITECTURE.md), [Known Limitations](docs/KNOWN_LIMITATIONS.md) и [матрица ошибок](docs/ERROR_MATRIX.md).
+
 Текущий этап v0.6 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.

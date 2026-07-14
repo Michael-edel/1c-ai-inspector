@@ -12,6 +12,14 @@ def test_backend_container_does_not_run_as_root() -> None:
 
 def test_frontend_container_uses_lockfile_and_non_root_user() -> None:
     dockerfile = (ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
-    assert "USER node" in dockerfile
+    nginx = (ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+    assert "FROM node:22-alpine AS build" in dockerfile
+    assert "FROM nginxinc/nginx-unprivileged:" in dockerfile
+    assert "RUN npm run build" in dockerfile
+    assert "COPY --from=build /app/dist" in dockerfile
+    assert "USER 101" in dockerfile
     assert "package-lock.json" in dockerfile
     assert "RUN npm ci" in dockerfile
+    assert "npm run dev" not in dockerfile
+    assert "try_files $uri $uri/ /index.html" in nginx
+    assert "proxy_pass http://backend:8000" in nginx

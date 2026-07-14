@@ -130,14 +130,16 @@ services:
   frontend:
     build:
       context: ./frontend
-    environment:
-      VITE_PROXY_TARGET: http://backend:8000
-      APP_DOMAIN: ${APP_DOMAIN:-localhost}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     depends_on:
       backend:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5173/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres_data:

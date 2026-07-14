@@ -24,6 +24,8 @@ Migrate service ---> PostgreSQL schema and grants
 
 The production edge exposes Caddy only. Frontend and backend are bound to the internal Compose network, and PostgreSQL is not published externally. Keycloak is an optional persistent IdP profile; an external JWKS issuer can be used instead.
 
+The frontend image is multi-stage: Node/Vite produces immutable assets during build, while the runtime is an unprivileged nginx container serving only `dist`. Local Docker access proxies API paths to backend; production Caddy routes those paths directly and sends only UI traffic to frontend.
+
 ## Patch Planner v0.2 Boundary
 
 Patch Planner consumes persisted read-only task evidence, prepares source snapshots and diffs, verifies an operator-configured Git revision, records approval decisions and creates signed immutable packages. A manual handoff records which package was transferred to an operator, but it does not mean that the proposal was applied.

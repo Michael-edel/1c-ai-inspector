@@ -54,8 +54,9 @@ if readiness.get("status") != "ready":
     raise SystemExit("Production readiness is not ready")
 if len(discovered) < minimum_tools:
     raise SystemExit(f"Expected at least {minimum_tools} discovered tools")
-if "execute_query" in published:
-    raise SystemExit("Forbidden execute_query tool is published")
+for forbidden_tool in ("execute_query", "get_event_log"):
+    if forbidden_tool in published:
+        raise SystemExit(f"Forbidden {forbidden_tool} tool is published")
 if (
     traffic.get("warningBytes") != 5_000_000_000
     or traffic.get("criticalBytes") != 8_000_000_000

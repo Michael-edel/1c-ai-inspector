@@ -24,9 +24,9 @@ function Read-BridgeToken {
     param([Parameter(Mandatory)][string]$Path)
 
     $content = Get-Content -Raw -LiteralPath $Path
-    $match = [regex]::Match($content, '(?m)^ONEC_MCP_BRIDGE_TOKEN=(?<value>[^\r\n]+)$')
+    $match = [regex]::Match($content, '(?m)^ONEC_MCP_INSPECTOR_TOKEN=(?<value>[^\r\n]+)$')
     if (-not $match.Success) {
-        throw "ONEC_MCP_BRIDGE_TOKEN is missing from bridge env file"
+        throw "ONEC_MCP_INSPECTOR_TOKEN is missing from bridge env file"
     }
 
     $value = $match.Groups['value'].Value.Trim()
@@ -48,8 +48,8 @@ function Write-BridgeToken {
     $content = Get-Content -Raw -LiteralPath $Path
     $updated = [regex]::Replace(
         $content,
-        '(?m)^ONEC_MCP_BRIDGE_TOKEN=[^\r\n]+$',
-        "ONEC_MCP_BRIDGE_TOKEN=$Token"
+        '(?m)^ONEC_MCP_INSPECTOR_TOKEN=[^\r\n]+$',
+        "ONEC_MCP_INSPECTOR_TOKEN=$Token"
     )
     if ($updated -eq $content) {
         throw "Bridge token line was not updated"
@@ -193,8 +193,8 @@ function Save-CredentialRecord {
 
     $record = @"
 
-[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz'))] 1C AI Inspector MCP bridge rotation
-ONEC_MCP_BRIDGE_TOKEN=$Token
+[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz'))] 1C AI Inspector development token rotation
+ONEC_MCP_INSPECTOR_TOKEN=$Token
 "@
     Add-Content -LiteralPath $CredentialsFile -Value $record -Encoding utf8
 }

@@ -47,8 +47,8 @@ if ($tools.Count -lt 8) { throw "Expected at least 8 discovered tools" }
 if ($tools | Where-Object { $_.mode -ne "read-only" }) {
     throw "A non-read-only MCP tool was discovered"
 }
-if ($tools | Where-Object { $_.name -eq "execute_query" }) {
-    throw "execute_query must remain unpublished"
+if ($tools | Where-Object { $_.name -in @("execute_query", "get_event_log") }) {
+    throw "Business and diagnostic tools must remain unpublished"
 }
 
 $sync = Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/projects/sync"

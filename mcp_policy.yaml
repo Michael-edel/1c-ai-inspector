@@ -1,5 +1,5 @@
 policyId: edt-mcp-default
-version: 1.1.0
+version: 1.2.0
 tools:
   bsl_syntax_help:
     name: bsl_syntax_help
@@ -8,10 +8,6 @@ tools:
   get_configuration_info:
     name: get_configuration_info
     category: metadata.read
-    mode: read-only
-  get_event_log:
-    name: get_event_log
-    category: audit.read
     mode: read-only
   get_form_structure:
     name: get_form_structure

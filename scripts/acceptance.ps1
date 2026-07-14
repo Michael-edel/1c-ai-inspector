@@ -6,9 +6,14 @@ $repo = Split-Path -Parent $PSScriptRoot
 Push-Location $repo
 try {
     python -m pytest backend/tests -q
+    if ($LASTEXITCODE -ne 0) { throw "Backend tests failed" }
     python -m compileall -q backend/app backend/migrations backend/tests
+    if ($LASTEXITCODE -ne 0) { throw "Backend compile check failed" }
     Push-Location frontend
-    try { npm run build } finally { Pop-Location }
+    try {
+        npm run build
+        if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
+    } finally { Pop-Location }
 
     $services = @(docker compose --env-file .env.example config --services)
     if ($LASTEXITCODE -ne 0) { throw "docker compose config failed" }

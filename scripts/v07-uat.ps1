@@ -76,7 +76,9 @@ if ($readiness.status -ne "ready") { throw "Readiness is not ready: $($readiness
 
 $policy = Get-Api "/api/v1/system/policy"
 if (@($policy.discoveredTools).Count -lt 8) { throw "Expected at least 8 discovered tools" }
-if ($policy.publishedTools -contains "execute_query") { throw "execute_query must remain unpublished" }
+foreach ($forbiddenTool in @("execute_query", "get_event_log")) {
+    if ($policy.publishedTools -contains $forbiddenTool) { throw "$forbiddenTool must remain unpublished" }
+}
 
 $projects = @(Get-Api "/api/v1/projects")
 if ($projects.Count -lt 1) { throw "No projects are available" }

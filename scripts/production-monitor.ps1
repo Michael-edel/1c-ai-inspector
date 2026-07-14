@@ -42,7 +42,9 @@ if ($readiness.status -ne "ready") { throw "Production readiness is not ready" }
 $policy = Invoke-RestMethod -Uri "$base/api/v1/system/policy"
 $discoveredTools = @($policy.discoveredTools)
 if ($discoveredTools.Count -lt $MinimumTools) { throw "Expected at least $MinimumTools discovered tools" }
-if (@($policy.publishedTools) -contains "execute_query") { throw "Forbidden execute_query tool is published" }
+foreach ($forbiddenTool in @("execute_query", "get_event_log")) {
+    if (@($policy.publishedTools) -contains $forbiddenTool) { throw "Forbidden $forbiddenTool tool is published" }
+}
 
 $traffic = Invoke-RestMethod -Uri "$base/api/v1/system/traffic"
 if ($traffic.warningBytes -ne 5000000000 -or $traffic.criticalBytes -ne 8000000000 -or $traffic.hardLimitBytes -ne 9800000000) {

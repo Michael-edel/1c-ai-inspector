@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -74,7 +74,9 @@ class ToolCall(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     output_json: Mapped[str | None] = mapped_column(Text)
+    request_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     result_size_chars: Mapped[int | None] = mapped_column(Integer)
+    result_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(100))
 
@@ -118,9 +120,19 @@ class ModelUsage(TimestampMixin, Base):
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cached_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    response_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     estimated_cost: Mapped[float] = mapped_column(nullable=False, default=0)
     pricing_source: Mapped[str] = mapped_column(String(128), nullable=False, default="environment")
     response_checksum: Mapped[str | None] = mapped_column(String(64))
+
+
+class TrafficUsage(TimestampMixin, Base):
+    __tablename__ = "traffic_usage"
+
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
 
 class NormalizedTool(TimestampMixin, Base):

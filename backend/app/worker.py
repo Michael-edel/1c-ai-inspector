@@ -28,6 +28,7 @@ from app.services.task_state import (
     CLAIMABLE_TASK_STATUSES,
     transition_task,
 )
+from app.services.traffic import TrafficController
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ def load_completed_tool_calls(session, task_id: str) -> dict[str, dict[str, obje
             "status": row.status,
             "durationMs": row.duration_ms,
             "resultSizeChars": row.result_size_chars,
+            "requestSizeBytes": row.request_size_bytes,
+            "resultSizeBytes": row.result_size_bytes,
         }
     return cache
 
@@ -129,6 +132,8 @@ def persist_tool_call(
             call["durationMs"],
             call.get("errorCode"),
             call.get("resultSizeChars"),
+            call.get("requestSizeBytes"),
+            call.get("resultSizeBytes"),
         )
     call["persisted"] = True
 
@@ -154,6 +159,8 @@ def record_retrieval_calls(
             call["durationMs"],
             call.get("errorCode"),
             call.get("resultSizeChars"),
+            call.get("requestSizeBytes"),
+            call.get("resultSizeBytes"),
         )
     if reused_count:
         AuditRecorder(session).record_event(
@@ -280,6 +287,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             request_json = task.request_json
             completed_calls = load_completed_tool_calls(session, task_id)
         settings = get_settings()
+        traffic_controller = TrafficController(get_session_factory(), settings)
         assert task_claimed_at is not None
         task_deadline = task_claimed_at + settings.task_timeout_sec
         heartbeat_thread = threading.Thread(
@@ -312,7 +320,11 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         on_tool_call=lambda call: persist_tool_call(session, task_id, call, lease_owner),
                         deadline=task_deadline,
                         max_result_chars=settings.max_result_chars,
+                        max_result_bytes=settings.max_mcp_result_bytes,
+                        max_task_mcp_bytes=settings.max_task_mcp_bytes,
                         max_methods_read=settings.max_methods_read,
+                        reserve_traffic=traffic_controller.reserve,
+                        finalize_traffic=traffic_controller.finalize,
                     )
                 finally:
                     await connector.close()
@@ -333,6 +345,8 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 "MCP_RESULT_TOO_LARGE",
                 "MCP_TOOL_CALL_FAILED",
                 "METHOD_READ_LIMIT_EXCEEDED",
+                "TASK_TRAFFIC_LIMIT_EXCEEDED",
+                "MONTHLY_TRAFFIC_LIMIT_EXCEEDED",
             }:
                 raise AgentExecutionError(exc.code) from exc
             if isinstance(exc, RetrievalError) and exc.code == "NON_IDEMPOTENT_RETRY_BLOCKED":
@@ -357,7 +371,11 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 task,
                 definition,
                 settings,
-                OpenAICompatibleAdapter(settings, deadline=task_deadline),
+                OpenAICompatibleAdapter(
+                    settings,
+                    deadline=task_deadline,
+                    traffic_controller=traffic_controller,
+                ),
                 retrieval.context,
                 retrieval.calls,
             )

@@ -22,6 +22,8 @@ class AuditRecorder:
         duration_ms: int | None = None,
         error_code: str | None = None,
         result_size_chars: int | None = None,
+        request_size_bytes: int | None = None,
+        result_size_bytes: int | None = None,
     ) -> str:
         call_id = f"call_{uuid4().hex}"
         self.session.add(
@@ -33,7 +35,9 @@ class AuditRecorder:
                 status=status,
                 input_json=json.dumps(input_payload, ensure_ascii=False),
                 output_json=json.dumps(output_payload, ensure_ascii=False) if output_payload else None,
+                request_size_bytes=request_size_bytes,
                 result_size_chars=result_size_chars,
+                result_size_bytes=result_size_bytes,
                 duration_ms=duration_ms,
                 error_code=error_code,
             )
@@ -53,6 +57,8 @@ class AuditRecorder:
         cached_input_tokens: int = 0,
         pricing_source: str = "environment",
         duration_ms: int = 0,
+        request_size_bytes: int = 0,
+        response_size_bytes: int = 0,
     ) -> None:
         self.session.add(
             ModelUsage(
@@ -63,6 +69,8 @@ class AuditRecorder:
                 output_tokens=output_tokens,
                 cached_input_tokens=cached_input_tokens,
                 duration_ms=duration_ms,
+                request_size_bytes=request_size_bytes,
+                response_size_bytes=response_size_bytes,
                 response_checksum=response_checksum,
                 pricing_source=pricing_source,
                 estimated_cost=estimate_cost(

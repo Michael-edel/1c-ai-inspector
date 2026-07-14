@@ -28,6 +28,7 @@ health_body, health_headers = request_raw("/health")
 health = json.loads(health_body)
 readiness = request("/api/v1/system/readiness")
 policy = request("/api/v1/system/policy")
+traffic = request("/api/v1/system/traffic")
 projects = request("/api/v1/projects")
 history = request("/api/v1/tasks")
 discovered = policy.get("discoveredTools", [])
@@ -53,6 +54,16 @@ if len(discovered) < minimum_tools:
     raise SystemExit(f"Expected at least {minimum_tools} discovered tools")
 if "execute_query" in published:
     raise SystemExit("Forbidden execute_query tool is published")
+if (
+    traffic.get("warningBytes") != 5_000_000_000
+    or traffic.get("criticalBytes") != 8_000_000_000
+    or traffic.get("hardLimitBytes") != 9_800_000_000
+):
+    raise SystemExit("Production traffic thresholds do not match 5/8/9.8 GB")
+if traffic.get("level") not in {"normal", "warning", "critical", "blocked"}:
+    raise SystemExit("Production traffic level is invalid")
+if traffic.get("accountedBytes", 0) > traffic.get("hardLimitBytes", 0) or traffic.get("remainingBytes", -1) < 0:
+    raise SystemExit("Production traffic counter exceeds its hard limit")
 if len(projects) < 1:
     raise SystemExit("No synchronized projects are available")
 for item in history:
@@ -62,6 +73,7 @@ for item in history:
 print(
     "Production monitor passed: "
     f"health=ok readiness=ready discoveredTools={len(discovered)} "
-    f"projects={len(projects)} taskHistory={len(history)}."
+    f"projects={len(projects)} taskHistory={len(history)} "
+    f"traffic={traffic.get('accountedBytes')}/{traffic.get('hardLimitBytes')}."
 )
 PY

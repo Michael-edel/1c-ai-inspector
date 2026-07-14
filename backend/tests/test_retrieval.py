@@ -259,6 +259,37 @@ def test_retrieval_rejects_an_oversized_mcp_result(tmp_path: Path) -> None:
     assert error.value.code == "MCP_RESULT_TOO_LARGE"
     assert error.value.calls[0]["errorCode"] == "MCP_RESULT_TOO_LARGE"
     assert error.value.calls[0]["resultSizeChars"] > 50
+    assert error.value.calls[0]["resultSizeBytes"] > 50
+
+
+def test_retrieval_stops_before_task_traffic_budget_is_exceeded(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+    tool_calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal tool_calls
+        body = json.loads(request.content)
+        if body["method"] == "initialize":
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+        if body["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        tool_calls += 1
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(
+            retrieve_task_context(
+                {"retrieval": [{"tool": "read_source", "arguments": {}}]},
+                AgentRegistry().get("1c_code_assistant"),
+                snapshot,
+                McpConnector("http://mcp.test", snapshot, transport=httpx.MockTransport(handler)),
+                max_result_bytes=1_000,
+                max_task_mcp_bytes=500,
+            )
+        )
+
+    assert error.value.code == "TASK_TRAFFIC_LIMIT_EXCEEDED"
+    assert tool_calls == 0
 
 
 def test_retrieval_limits_read_source_module_reads(tmp_path: Path) -> None:

@@ -33,10 +33,16 @@ class Settings(BaseSettings):
     model_retries: int = Field(default=1, ge=0, le=3)
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_result_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)
+    max_mcp_result_bytes: int = Field(default=3_000_000, ge=64_000, le=50_000_000)
+    max_task_mcp_bytes: int = Field(default=12_000_000, ge=64_000, le=500_000_000)
+    max_model_response_bytes: int = Field(default=2_000_000, ge=64_000, le=50_000_000)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)
     max_findings: int = Field(default=100, ge=1, le=1_000)
     max_methods_read: int = Field(default=10, ge=1, le=1_000)
     max_request_bytes: int = Field(default=12_000_000, ge=64_000, le=50_000_000)
+    traffic_warning_bytes: int = Field(default=5_000_000_000, ge=1_000_000)
+    traffic_critical_bytes: int = Field(default=8_000_000_000, ge=1_000_000)
+    traffic_hard_limit_bytes: int = Field(default=9_800_000_000, ge=1_000_000)
     task_timeout_sec: int = Field(default=300, ge=1, le=86_400)
     worker_heartbeat_interval_sec: int = Field(default=15, ge=1, le=300)
     worker_lease_timeout_sec: int = Field(default=600, ge=5, le=86_400)
@@ -75,6 +81,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WORKER_HEARTBEAT_INTERVAL_SEC must be less than WORKER_LEASE_TIMEOUT_SEC"
             )
+        if not (
+            self.traffic_warning_bytes
+            < self.traffic_critical_bytes
+            < self.traffic_hard_limit_bytes
+        ):
+            raise ValueError(
+                "TRAFFIC_WARNING_BYTES must be less than TRAFFIC_CRITICAL_BYTES, "
+                "which must be less than TRAFFIC_HARD_LIMIT_BYTES"
+            )
+        if self.max_mcp_result_bytes > self.max_task_mcp_bytes:
+            raise ValueError("MAX_MCP_RESULT_BYTES must not exceed MAX_TASK_MCP_BYTES")
         if self.inspector_auth_secret_previous and self.inspector_auth_secret_previous_until is None:
             raise ValueError("INSPECTOR_AUTH_SECRET_PREVIOUS_UNTIL is required with a previous secret")
         if self.inspector_auth_secret_previous_until is not None and not self.inspector_auth_secret_previous:

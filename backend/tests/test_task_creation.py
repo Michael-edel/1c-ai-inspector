@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.api.tasks import TaskCreateRequest, create_task
 from app.mcp.policy import PolicyProvider
-from app.models import Base, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
+from app.models import Base, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall, TrafficUsage
+from app.services.traffic import traffic_period
 
 
 REQUIRED_CAPABILITIES = ["bsl.read", "code.search", "references.read"]
@@ -105,6 +106,60 @@ def test_create_task_persists_server_enforced_full_source_step() -> None:
             "arguments": {"module": "Документ.ЗаказКлиента.МодульОбъекта"},
         }
         assert retrieval[1]["tool"] == "search_code"
+
+
+def test_create_task_requires_confirmation_after_traffic_warning() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    snapshot = PolicyProvider(Path(__file__).parents[2] / "mcp_policy.yaml").load()
+    state = SimpleNamespace(
+        policy_snapshot=snapshot,
+        discovered_tools=set(snapshot.published_tools),
+        settings=SimpleNamespace(
+            model_provider="openai",
+            model_name="test-model",
+            app_environment="sandbox",
+            traffic_warning_bytes=5_000_000_000,
+            traffic_critical_bytes=8_000_000_000,
+            traffic_hard_limit_bytes=9_800_000_000,
+        ),
+    )
+    request = Request({"type": "http", "app": SimpleNamespace(state=state)})
+    with Session(engine) as session:
+        session.add(Project(
+            id="prj_traffic_warning",
+            mcp_server_id="mcp_edt",
+            external_id="configuration:traffic-warning",
+            name="Traffic warning",
+            environment="sandbox",
+            available_capabilities=json.dumps(REQUIRED_CAPABILITIES),
+        ))
+        session.add(TrafficUsage(period=traffic_period(), used_bytes=5_100_000_000, reserved_bytes=0))
+        session.commit()
+
+        with pytest.raises(HTTPException) as error:
+            create_task(
+                TaskCreateRequest(
+                    projectId="prj_traffic_warning",
+                    agentId="1c_code_assistant",
+                    request={"text": "inspect"},
+                ),
+                request,
+                session,
+            )
+        assert error.value.detail["code"] == "TRAFFIC_CONFIRMATION_REQUIRED"
+
+        response = create_task(
+            TaskCreateRequest(
+                projectId="prj_traffic_warning",
+                agentId="1c_code_assistant",
+                trafficConfirmed=True,
+                request={"text": "inspect"},
+            ),
+            request,
+            session,
+        )
+        assert response.status == "created"
 
 
 def test_create_task_blocks_environment_and_records_audit_without_tools() -> None:

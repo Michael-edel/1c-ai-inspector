@@ -18,6 +18,7 @@ from app.models.entities import (
     Task,
     TaskEvent,
     ToolCall,
+    TrafficUsage,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "Task",
     "TaskEvent",
     "ToolCall",
+    "TrafficUsage",
 ]

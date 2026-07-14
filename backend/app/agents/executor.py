@@ -307,5 +307,7 @@ def execute_agent(
         cached_input_tokens=result.cached_input_tokens,
         pricing_source="environment",
         duration_ms=model_duration_ms,
+        request_size_bytes=result.request_size_bytes,
+        response_size_bytes=result.response_size_bytes,
     )
     return report

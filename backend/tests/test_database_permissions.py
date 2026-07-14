@@ -37,10 +37,14 @@ def test_foundation_defers_columns_owned_by_later_migrations() -> None:
     for table_name, column_name in (
         ("tasks", "cancel_requested"),
         ("tool_calls", "result_size_chars"),
+        ("tool_calls", "request_size_bytes"),
+        ("tool_calls", "result_size_bytes"),
         ("model_usage", "response_checksum"),
         ("model_usage", "cached_input_tokens"),
         ("model_usage", "pricing_source"),
         ("model_usage", "duration_ms"),
+        ("model_usage", "request_size_bytes"),
+        ("model_usage", "response_size_bytes"),
     ):
         assert f'(\"{table_name}\", \"{column_name}\")' in foundation
     assert "op.drop_column(table_name, column_name)" in foundation

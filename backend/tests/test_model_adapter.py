@@ -7,6 +7,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.modeling import ModelError, ModelTimeoutError, OpenAICompatibleAdapter
+from app.services.traffic import TrafficLimitExceeded
 
 
 def test_openai_compatible_adapter_parses_content_and_usage() -> None:
@@ -36,6 +37,8 @@ def test_openai_compatible_adapter_parses_content_and_usage() -> None:
     assert result.output_tokens == 7
     assert result.cached_input_tokens == 4
     assert result.response_checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
+    assert result.request_size_bytes > 0
+    assert result.response_size_bytes > 0
 
 
 def test_openai_compatible_adapter_accepts_content_blocks_and_json_fence() -> None:
@@ -114,4 +117,19 @@ def test_model_adapter_rejects_an_expired_parent_deadline() -> None:
     )
 
     with pytest.raises(ModelTimeoutError, match="TASK_TIMEOUT"):
+        adapter.complete([])
+
+
+def test_model_adapter_stops_before_call_when_monthly_traffic_is_exhausted() -> None:
+    class BlockingTrafficController:
+        def reserve(self, _: int):
+            raise TrafficLimitExceeded("MONTHLY_TRAFFIC_LIMIT_EXCEEDED")
+
+    adapter = OpenAICompatibleAdapter(
+        get_settings(),
+        transport=httpx.MockTransport(lambda _: pytest.fail("blocked traffic must not call model")),
+        traffic_controller=BlockingTrafficController(),  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ModelError, match="MONTHLY_TRAFFIC_LIMIT_EXCEEDED"):
         adapter.complete([])

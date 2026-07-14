@@ -8,6 +8,7 @@ from typing import Any
 from app.agents.registry import AgentDefinition
 from app.mcp.connector import McpConnector, McpTaskTimeoutError, ToolNotAllowedError
 from app.mcp.policy import PolicySnapshot
+from app.services.traffic import TrafficLimitExceeded
 
 
 class RetrievalError(ValueError):
@@ -37,6 +38,12 @@ def tool_call_fingerprint(tool_name: str, arguments: dict[str, Any]) -> str:
 
 def _serialized_size(value: Any) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str))
+
+
+def _serialized_bytes(value: Any) -> int:
+    return len(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")
+    )
 
 
 def _compact_search_output(output: Any, query: str, category: Any, module: Any) -> Any:
@@ -86,7 +93,11 @@ async def retrieve_task_context(
     on_tool_call: Callable[[dict[str, Any]], None] | None = None,
     deadline: float | None = None,
     max_result_chars: int | None = None,
+    max_result_bytes: int | None = None,
+    max_task_mcp_bytes: int | None = None,
     max_methods_read: int | None = None,
+    reserve_traffic: Callable[[int], Any] | None = None,
+    finalize_traffic: Callable[[Any, int], None] | None = None,
 ) -> RetrievalResult:
     plan = request.get("retrieval", [])
     if not isinstance(plan, list):
@@ -97,6 +108,7 @@ async def retrieve_task_context(
     context: list[dict[str, Any]] = []
     calls: list[dict[str, Any]] = []
     methods_read = 0
+    task_traffic_bytes = 0
     for item in plan:
         if not isinstance(item, dict) or not isinstance(item.get("tool"), str):
             raise RetrievalError("RETRIEVAL_STEP_INVALID")
@@ -148,6 +160,16 @@ async def retrieve_task_context(
             })
             context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
             continue
+        request_size_bytes = _serialized_bytes({"tool": tool_name, "arguments": arguments})
+        reservation = None
+        reservation_bytes = request_size_bytes + (max_result_bytes or 0)
+        if max_task_mcp_bytes is not None and task_traffic_bytes + reservation_bytes > max_task_mcp_bytes:
+            raise RetrievalError("TASK_TRAFFIC_LIMIT_EXCEEDED", calls)
+        if reserve_traffic is not None and reservation_bytes > 0:
+            try:
+                reservation = reserve_traffic(reservation_bytes)
+            except TrafficLimitExceeded as exc:
+                raise RetrievalError("MONTHLY_TRAFFIC_LIMIT_EXCEEDED", calls) from exc
         started = time.perf_counter()
         try:
             if deadline is None:
@@ -155,6 +177,8 @@ async def retrieve_task_context(
             else:
                 output = await connector.call_tool(tool_name, arguments, deadline=deadline)
         except McpTaskTimeoutError as exc:
+            if reservation is not None and finalize_traffic is not None:
+                finalize_traffic(reservation, request_size_bytes)
             call = {
                 "toolName": tool_name,
                 "input": arguments,
@@ -162,12 +186,15 @@ async def retrieve_task_context(
                 "status": "failed",
                 "errorCode": "TASK_TIMEOUT",
                 "durationMs": int((time.perf_counter() - started) * 1000),
+                "requestSizeBytes": request_size_bytes,
             }
             calls.append(call)
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("TASK_TIMEOUT", calls) from exc
         except Exception as exc:
+            if reservation is not None and finalize_traffic is not None:
+                finalize_traffic(reservation, request_size_bytes)
             call = {
                 "toolName": tool_name,
                 "input": arguments,
@@ -175,12 +202,34 @@ async def retrieve_task_context(
                 "status": "failed",
                 "errorCode": "MCP_TOOL_CALL_FAILED",
                 "durationMs": int((time.perf_counter() - started) * 1000),
+                "requestSizeBytes": request_size_bytes,
             }
             calls.append(call)
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("MCP_TOOL_CALL_FAILED", calls) from exc
         result_size_chars = _serialized_size(output)
+        result_size_bytes = _serialized_bytes(output)
+        actual_traffic_bytes = request_size_bytes + result_size_bytes
+        if reservation is not None and finalize_traffic is not None:
+            finalize_traffic(reservation, actual_traffic_bytes)
+        task_traffic_bytes += actual_traffic_bytes
+        if max_result_bytes is not None and result_size_bytes > max_result_bytes:
+            call = {
+                "toolName": tool_name,
+                "input": arguments,
+                "output": None,
+                "status": "failed",
+                "errorCode": "MCP_RESULT_TOO_LARGE",
+                "durationMs": int((time.perf_counter() - started) * 1000),
+                "requestSizeBytes": request_size_bytes,
+                "resultSizeChars": result_size_chars,
+                "resultSizeBytes": result_size_bytes,
+            }
+            calls.append(call)
+            if on_tool_call is not None:
+                on_tool_call(call)
+            raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
         if max_result_chars is not None and result_size_chars > max_result_chars:
             call = {
                 "toolName": tool_name,
@@ -189,7 +238,9 @@ async def retrieve_task_context(
                 "status": "failed",
                 "errorCode": "MCP_RESULT_TOO_LARGE",
                 "durationMs": int((time.perf_counter() - started) * 1000),
+                "requestSizeBytes": request_size_bytes,
                 "resultSizeChars": result_size_chars,
+                "resultSizeBytes": result_size_bytes,
             }
             calls.append(call)
             if on_tool_call is not None:
@@ -207,7 +258,9 @@ async def retrieve_task_context(
             "output": compacted_output,
             "status": "completed",
             "durationMs": int((time.perf_counter() - started) * 1000),
+            "requestSizeBytes": request_size_bytes,
             "resultSizeChars": result_size_chars,
+            "resultSizeBytes": result_size_bytes,
         }
         calls.append(call)
         if on_tool_call is not None:

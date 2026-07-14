@@ -17,6 +17,7 @@ from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
 from app.services.source_retrieval_plan import ensure_full_source_retrieval
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
+from app.services.traffic import traffic_snapshot
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
 
@@ -27,6 +28,7 @@ class TaskCreateRequest(BaseModel):
     project_id: str = Field(alias="projectId", min_length=1)
     agent_id: str = Field(alias="agentId", min_length=1)
     request: dict[str, object] = Field(default_factory=dict)
+    traffic_confirmed: bool = Field(default=False, alias="trafficConfirmed")
 
 
 class TaskResponse(BaseModel):
@@ -42,6 +44,7 @@ class TaskAuditResponse(BaseModel):
     events: list[dict[str, object]]
     tool_calls: list[dict[str, object]]
     model_usage: list[dict[str, object]]
+    traffic: dict[str, int]
 
 
 def _persist_task(
@@ -225,6 +228,17 @@ def create_task(
         db.flush()
 
     settings: Settings = request.app.state.settings
+    current_traffic = traffic_snapshot(db, settings)
+    if current_traffic["level"] == "blocked":
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "MONTHLY_TRAFFIC_LIMIT_EXCEEDED"},
+        )
+    if current_traffic["level"] in {"warning", "critical"} and not payload.traffic_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "TRAFFIC_CONFIRMATION_REQUIRED"},
+        )
     if project.environment not in {"sandbox", "test"} or project.environment != getattr(settings, "app_environment", "sandbox"):
         _block_task(
             db,
@@ -324,6 +338,8 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
     events = db.scalars(select(TaskEvent).where(TaskEvent.task_id == task_id).order_by(TaskEvent.created_at)).all()
     calls = db.scalars(select(ToolCall).where(ToolCall.task_id == task_id).order_by(ToolCall.created_at)).all()
     usage = db.scalars(select(ModelUsage).where(ModelUsage.task_id == task_id).order_by(ModelUsage.created_at)).all()
+    mcp_bytes = sum((call.request_size_bytes or 0) + (call.result_size_bytes or 0) for call in calls)
+    model_bytes = sum(item.request_size_bytes + item.response_size_bytes for item in usage)
     return TaskAuditResponse(
         task_id=task.id,
         status=task.status,
@@ -335,6 +351,8 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "mode": call.mode,
                 "status": call.status,
                 "resultSizeChars": call.result_size_chars,
+                "requestSizeBytes": call.request_size_bytes,
+                "resultSizeBytes": call.result_size_bytes,
                 "durationMs": call.duration_ms,
                 "errorCode": call.error_code,
             }
@@ -351,9 +369,12 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "estimatedCost": item.estimated_cost,
                 "pricingSource": item.pricing_source,
                 "responseChecksum": item.response_checksum,
+                "requestSizeBytes": item.request_size_bytes,
+                "responseSizeBytes": item.response_size_bytes,
             }
             for item in usage
         ],
+        traffic={"mcpBytes": mcp_bytes, "modelBytes": model_bytes, "totalBytes": mcp_bytes + model_bytes},
     )
 
 

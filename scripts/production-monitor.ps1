@@ -44,6 +44,17 @@ $discoveredTools = @($policy.discoveredTools)
 if ($discoveredTools.Count -lt $MinimumTools) { throw "Expected at least $MinimumTools discovered tools" }
 if (@($policy.publishedTools) -contains "execute_query") { throw "Forbidden execute_query tool is published" }
 
+$traffic = Invoke-RestMethod -Uri "$base/api/v1/system/traffic"
+if ($traffic.warningBytes -ne 5000000000 -or $traffic.criticalBytes -ne 8000000000 -or $traffic.hardLimitBytes -ne 9800000000) {
+    throw "Production traffic thresholds do not match 5/8/9.8 GB"
+}
+if (@("normal", "warning", "critical", "blocked") -notcontains $traffic.level) {
+    throw "Production traffic level is invalid"
+}
+if ($traffic.accountedBytes -gt $traffic.hardLimitBytes -or $traffic.remainingBytes -lt 0) {
+    throw "Production traffic counter exceeds its hard limit"
+}
+
 $projects = Invoke-RestMethod -Uri "$base/api/v1/projects"
 if ($projects.Count -lt 1) { throw "No synchronized projects are available" }
 $history = Invoke-RestMethod -Uri "$base/api/v1/tasks"
@@ -52,4 +63,4 @@ foreach ($forbiddenProperty in @("request", "requestJson", "result", "resultJson
     if ($historyProperties -contains $forbiddenProperty) { throw "Task history exposes forbidden property: $forbiddenProperty" }
 }
 
-Write-Output "Production monitor passed: health=ok readiness=ready discoveredTools=$($discoveredTools.Count) projects=$($projects.Count) taskHistory=$($history.Count)."
+Write-Output "Production monitor passed: health=ok readiness=ready discoveredTools=$($discoveredTools.Count) projects=$($projects.Count) taskHistory=$($history.Count) traffic=$($traffic.accountedBytes)/$($traffic.hardLimitBytes)."

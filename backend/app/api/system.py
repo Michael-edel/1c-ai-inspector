@@ -14,8 +14,14 @@ from app.services.mcp_discovery import McpDiscoveryService
 from app.services.capabilities import evaluate_capabilities
 from app.services.diagnostics import build_diagnostics
 from app.services.readiness import ReadinessGate
+from app.services.traffic import traffic_snapshot
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+
+
+@router.get("/traffic")
+def traffic(request: Request, db: Session = Depends(get_db)) -> dict[str, int | str]:
+    return traffic_snapshot(db, request.app.state.settings)
 
 
 @router.get("/metrics")

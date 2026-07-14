@@ -71,6 +71,11 @@ def test_execution_limits_have_safe_defaults_and_reject_zero() -> None:
     settings = make_settings()
 
     assert settings.max_result_chars == 500_000
+    assert settings.max_mcp_result_bytes == 3_000_000
+    assert settings.max_task_mcp_bytes == 12_000_000
+    assert settings.traffic_warning_bytes == 5_000_000_000
+    assert settings.traffic_critical_bytes == 8_000_000_000
+    assert settings.traffic_hard_limit_bytes == 9_800_000_000
     assert settings.max_findings == 100
     assert settings.max_methods_read == 10
     with pytest.raises(ValidationError):
@@ -79,6 +84,14 @@ def test_execution_limits_have_safe_defaults_and_reject_zero() -> None:
         make_settings(max_findings=0)
     with pytest.raises(ValidationError):
         make_settings(max_methods_read=0)
+
+
+def test_traffic_thresholds_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="TRAFFIC_WARNING_BYTES"):
+        make_settings(
+            traffic_warning_bytes=8_000_000_000,
+            traffic_critical_bytes=5_000_000_000,
+        )
 
 
 def test_model_retries_have_a_bounded_default() -> None:

@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.services.auth import AuthContext
 from app.services.sandbox_audit import record_sandbox_event
+from app.services.sandbox_apply import SandboxApplyError, apply_verified_package
 from app.services.sandbox_workflow import SandboxWorkflowError, validate_execution_request
 from app.services.sandbox_git import SandboxGitError, prepare_sandbox_worktree
 from app.services.sandbox_workflow import transition_sandbox_status
@@ -155,6 +156,69 @@ def prepare_sandbox_execution(
         "sandbox_prepared",
         identity.subject,
         {"branchName": prepared.branch_name, "sourceCommit": prepared.commit_sha},
+    )
+    db.commit()
+    return _execution_response(execution)
+
+
+@router.post("/{execution_id}/apply")
+def apply_sandbox_execution(
+    execution_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    proposal = db.get(PatchProposal, execution.proposal_id)
+    package = db.scalar(
+        select(PatchPackageVersion).where(
+            PatchPackageVersion.proposal_id == execution.proposal_id,
+            PatchPackageVersion.version == execution.package_version,
+        )
+    )
+    if proposal is None or package is None:
+        raise HTTPException(status_code=409, detail="SANDBOX_PACKAGE_UNAVAILABLE")
+    secret = request.app.state.settings.inspector_package_signing_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="SANDBOX_SIGNING_NOT_CONFIGURED")
+    try:
+        execution.status = transition_sandbox_status(execution.status, "applying")
+    except SandboxWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record_sandbox_event(db, execution.id, "sandbox_applying", identity.subject)
+    db.commit()
+    try:
+        result = apply_verified_package(
+            execution,
+            proposal,
+            package,
+            request.app.state.settings.sandbox_root,
+            secret,
+        )
+    except SandboxApplyError as exc:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = str(exc)
+        record_sandbox_event(
+            db,
+            execution.id,
+            "sandbox_apply_failed",
+            identity.subject,
+            {"errorCode": str(exc)},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution.status = transition_sandbox_status(execution.status, "validating")
+    execution.last_error_code = None
+    record_sandbox_event(
+        db,
+        execution.id,
+        "sandbox_applied",
+        identity.subject,
+        {"changedPaths": list(result.changed_paths), "diffSha256": result.diff_sha256},
     )
     db.commit()
     return _execution_response(execution)

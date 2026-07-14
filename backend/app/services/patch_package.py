@@ -24,6 +24,7 @@ def build_patch_package(proposal: PatchProposal, secret: str) -> bytes:
         "impact": loads(proposal.impact_json),
         "checkpointRef": proposal.checkpoint_ref,
         "applyAllowed": False,
+        "sandboxApplyAllowed": _sandbox_apply_allowed(proposal),
         "signatureAlgorithm": "HMAC-SHA256",
         "diffSha256": hashlib.sha256(diff.encode("utf-8")).hexdigest(),
     }
@@ -47,7 +48,7 @@ def build_patch_package(proposal: PatchProposal, secret: str) -> bytes:
         )
         archive.writestr(
             "README.txt",
-            "This is a proposal-only package. It does not apply changes to 1C, the workspace, or Git.\n",
+            "This signed package never applies itself. Sandbox execution requires separate owner authorization.\n",
         )
     return buffer.getvalue()
 
@@ -77,6 +78,7 @@ def verify_patch_package(package: bytes, secret: str, expected_proposal_id: str 
         "status": manifest.get("status"),
         "targetEnvironment": manifest.get("targetEnvironment"),
         "checkpointRef": manifest.get("checkpointRef"),
+        "sandboxApplyAllowed": manifest.get("sandboxApplyAllowed") is True,
         "algorithm": "HMAC-SHA256",
         "reason": None if valid else "PACKAGE_SIGNATURE_INVALID",
     }
@@ -85,3 +87,14 @@ def verify_patch_package(package: bytes, secret: str, expected_proposal_id: str 
 def _signature_payload(manifest: dict[str, object], diff: str) -> bytes:
     canonical = dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return canonical.encode("utf-8") + b"\0" + diff.encode("utf-8")
+
+
+def _sandbox_apply_allowed(proposal: PatchProposal) -> bool:
+    revision = proposal.source_revision or ""
+    return (
+        proposal.status == "approved"
+        and proposal.target_environment == "sandbox"
+        and len(revision) in {40, 64}
+        and bool(proposal.checkpoint_ref)
+        and str(proposal.checkpoint_ref).startswith("git-checkpoint:")
+    )

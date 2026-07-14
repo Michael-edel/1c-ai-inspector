@@ -117,6 +117,7 @@ def test_patch_package_contains_manifest_and_diff_without_apply_permission() -> 
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["proposalId"] == "pp_package"
         assert manifest["applyAllowed"] is False
+        assert manifest["sandboxApplyAllowed"] is False
         assert manifest["signatureAlgorithm"] == "HMAC-SHA256"
         assert archive.read("proposal.diff").startswith(b"--- a/module.bsl")
     assert verify_patch_package(package, "s" * 32, "pp_package")["valid"] is True

@@ -82,7 +82,16 @@ def _branch_exists(repository: Path, branch_name: str) -> bool:
 def _git(repository: Path, *arguments: str) -> str:
     try:
         result = subprocess.run(
-            ["git", "-c", f"safe.directory={repository}", "-C", str(repository), *arguments],
+            [
+                "git",
+                "-c",
+                f"safe.directory={repository}",
+                "-c",
+                "core.autocrlf=false",
+                "-C",
+                str(repository),
+                *arguments,
+            ],
             check=True,
             capture_output=True,
             text=True,

@@ -1,5 +1,8 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource/dm-mono/latin-400.css";
+import "@fontsource/dm-mono/latin-500.css";
+import "@fontsource-variable/manrope/index.css";
 import "./styles.css";
 import { SandboxPanel } from "./SandboxPanel";
 

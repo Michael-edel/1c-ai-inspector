@@ -25,6 +25,19 @@ def test_frontend_container_uses_lockfile_and_non_root_user() -> None:
     assert "proxy_pass http://backend:8000" in nginx
 
 
+def test_frontend_fonts_are_bundled_without_remote_stylesheets() -> None:
+    package = (ROOT / "frontend" / "package.json").read_text(encoding="utf-8")
+    entrypoint = (ROOT / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
+    styles = (ROOT / "frontend" / "src" / "styles.css").read_text(encoding="utf-8")
+
+    assert '"@fontsource/dm-mono"' in package
+    assert '"@fontsource-variable/manrope"' in package
+    assert 'import "@fontsource/dm-mono/latin-400.css"' in entrypoint
+    assert 'import "@fontsource-variable/manrope/index.css"' in entrypoint
+    assert "fonts.googleapis.com" not in styles
+    assert "fonts.gstatic.com" not in styles
+
+
 def test_linux_operations_scripts_are_exported_with_lf_endings() -> None:
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
 

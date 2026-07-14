@@ -38,7 +38,8 @@ if base_url.lower().startswith("https://"):
     csp = health_headers.get("Content-Security-Policy", "")
     if "max-age=" not in hsts:
         raise SystemExit("Missing or invalid Strict-Transport-Security header")
-    if not all(directive in csp for directive in ("default-src 'self'", "frame-ancestors 'none'", "object-src 'none'")):
+    required_csp = ("default-src 'self'", "font-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "object-src 'none'")
+    if not all(directive in csp for directive in required_csp) or "https://" in csp or "http://" in csp:
         raise SystemExit("Missing or invalid Content-Security-Policy header")
 if readiness.get("status") != "ready":
     raise SystemExit("Production readiness is not ready")

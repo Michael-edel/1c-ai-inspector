@@ -39,4 +39,4 @@ Backend and worker start only after the migration service succeeds. Production P
 
 Security acceptance must verify readiness, absence of write/conditional-write calls, audit persistence, authorization of metrics and non-root application containers. See [ERROR_MATRIX.md](ERROR_MATRIX.md) for public error and retry behavior.
 
-The production monitor also treats missing HSTS or a CSP without same-origin defaults, framing denial and object denial as a failed HTTPS release. The CSP permits the current Google Fonts stylesheet/font origins; all application scripts, API connections and other resources remain same-origin.
+The production monitor also treats missing HSTS or a CSP without same-origin defaults, framing denial and object denial as a failed HTTPS release. Frontend fonts are bundled at build time from pinned `@fontsource` packages, so application scripts, styles, fonts, API connections and other runtime resources remain same-origin.

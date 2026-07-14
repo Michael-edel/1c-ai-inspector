@@ -16,7 +16,14 @@ if ($base.StartsWith("https://", [System.StringComparison]::OrdinalIgnoreCase)) 
     $hsts = [string]$healthResponse.Headers["Strict-Transport-Security"]
     $csp = [string]$healthResponse.Headers["Content-Security-Policy"]
     if ($hsts -notmatch "(?:^|;)\s*max-age=\d+") { throw "Missing or invalid Strict-Transport-Security header" }
-    if ($csp -notmatch "default-src 'self'" -or $csp -notmatch "frame-ancestors 'none'" -or $csp -notmatch "object-src 'none'") {
+    if (
+        $csp -notmatch "default-src 'self'" -or
+        $csp -notmatch "font-src 'self'" -or
+        $csp -notmatch "style-src 'self'" -or
+        $csp -notmatch "frame-ancestors 'none'" -or
+        $csp -notmatch "object-src 'none'" -or
+        $csp -match "https?://"
+    ) {
         throw "Missing or invalid Content-Security-Policy header"
     }
 }

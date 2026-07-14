@@ -8,6 +8,7 @@ from typing import Any
 from app.agents.registry import AgentDefinition
 from app.mcp.connector import McpConnector, McpTaskTimeoutError, ToolNotAllowedError
 from app.mcp.policy import PolicySnapshot
+from app.services.source_retrieval_plan import extract_method_reference
 from app.services.traffic import TrafficLimitExceeded
 
 
@@ -82,6 +83,30 @@ def _compact_search_output(output: Any, query: str, category: Any, module: Any) 
     return {**output, "content": compacted}
 
 
+def _module_defining_method(output: Any, method: str) -> str | None:
+    if not isinstance(output, dict):
+        return None
+    content = output.get("content")
+    if not isinstance(content, list):
+        return None
+    declaration = re.compile(
+        rf"^\s*(?:Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    modules: set[str] = set()
+    for block in content:
+        if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+            continue
+        for section in re.split(r"(?=^### )", block["text"], flags=re.MULTILINE):
+            if not section.startswith("### ") or declaration.search(section) is None:
+                continue
+            header = section.splitlines()[0]
+            match = re.match(r"^###\s+(.+?)\s+\((?:строка|line)\b", header, re.IGNORECASE)
+            if match is not None:
+                modules.add(match.group(1).strip())
+    return next(iter(modules)) if len(modules) == 1 else None
+
+
 async def retrieve_task_context(
     request: dict[str, Any],
     definition: AgentDefinition,
@@ -109,7 +134,42 @@ async def retrieve_task_context(
     calls: list[dict[str, Any]] = []
     methods_read = 0
     task_traffic_bytes = 0
-    for item in plan:
+    pending = list(plan)
+    requested_method = extract_method_reference(request)
+
+    def enqueue_source_read(output: Any, tool_name: str, arguments: dict[str, Any]) -> None:
+        if (
+            tool_name != "search_code"
+            or definition.code not in {"1c_code_assistant", "1c_audit_agent"}
+            or requested_method is None
+            or str(arguments.get("query", "")).casefold() != requested_method.casefold()
+        ):
+            return
+        module = _module_defining_method(output, requested_method)
+        if module is None:
+            return
+        source_arguments = {"module": module}
+        already_planned = any(
+            isinstance(step, dict)
+            and step.get("tool") == "read_source"
+            and step.get("arguments") == source_arguments
+            for step in pending
+        )
+        already_called = any(
+            call.get("toolName") == "read_source" and call.get("input") == source_arguments
+            for call in calls
+        )
+        if already_planned or already_called:
+            return
+        contract = snapshot.published_tools.get("read_source")
+        if contract is None or contract.category not in allowed_categories:
+            return
+        if len(calls) + len(pending) + 1 > max_tool_calls:
+            raise RetrievalError("RETRIEVAL_LIMIT_EXCEEDED", calls)
+        pending.insert(0, {"tool": "read_source", "arguments": source_arguments})
+
+    while pending:
+        item = pending.pop(0)
         if not isinstance(item, dict) or not isinstance(item.get("tool"), str):
             raise RetrievalError("RETRIEVAL_STEP_INVALID")
         tool_name = item["tool"]
@@ -159,6 +219,7 @@ async def retrieve_task_context(
                 "reused": True,
             })
             context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
+            enqueue_source_read(compacted_output, tool_name, arguments)
             continue
         request_size_bytes = _serialized_bytes({"tool": tool_name, "arguments": arguments})
         reservation = None
@@ -266,4 +327,5 @@ async def retrieve_task_context(
         if on_tool_call is not None:
             on_tool_call(call)
         context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
+        enqueue_source_read(compacted_output, tool_name, arguments)
     return RetrievalResult(context=context, calls=calls)

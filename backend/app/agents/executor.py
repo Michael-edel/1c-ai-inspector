@@ -14,6 +14,7 @@ from app.reports.schema import ModelUsage, StructuredReport, ToolUsage
 from app.services.audit import AuditRecorder
 from app.services.context import ContextBuilder, ContextLimitError
 from app.services.costs import estimate_cost
+from app.services.source_retrieval_plan import extract_method_reference
 
 
 class AgentExecutionError(RuntimeError):
@@ -80,6 +81,14 @@ def _source_documents(extra_context: list[dict[str, object]] | None) -> dict[str
 
 def _source_line_limits(extra_context: list[dict[str, object]] | None) -> dict[str, int]:
     return {module: len(source.splitlines()) for module, source in _source_documents(extra_context).items()}
+
+
+def _source_contains_method(documents: dict[str, str], method: str) -> bool:
+    declaration = re.compile(
+        rf"^\s*(?:Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    return any(declaration.search(source) is not None for source in documents.values())
 
 
 def _normalized_evidence_text(value: str) -> str:
@@ -259,7 +268,17 @@ def execute_agent(
     source_coverage = _source_coverage(extra_context)
     limitations = list(report.limitations)
     next_actions = list(report.next_actions)
-    if definition.task_kind == "module_audit" and source_coverage != "full":
+    requested_method = extract_method_reference(request)
+    source_documents = _source_documents(extra_context)
+    method_source_missing = (
+        requested_method is not None
+        and definition.code in {"1c_code_assistant", "1c_audit_agent"}
+        and not _source_contains_method(source_documents, requested_method)
+    )
+    source_context_insufficient = (
+        definition.task_kind == "module_audit" and source_coverage != "full"
+    ) or method_source_missing
+    if source_context_insufficient:
         limitation = (
             "Полный исходный текст модуля не получен; findings основаны на частичных результатах search_code/MCP."
             if source_coverage == "partial"
@@ -270,9 +289,24 @@ def execute_agent(
             limitations.append(limitation)
         if next_action not in next_actions:
             next_actions.append(next_action)
+    validation = dict(report.validation)
+    if source_context_insufficient:
+        validation.update({
+            "readOnly": True,
+            "errorCode": "SOURCE_CONTEXT_INSUFFICIENT",
+            "requestedMethod": requested_method,
+        })
     calls = tool_calls or []
     report = report.model_copy(
         update={
+            "status": "failed" if source_context_insufficient else report.status,
+            "summary": (
+                "Не удалось сформировать проверенный ответ: полный исходный код запрошенного модуля не получен."
+                if source_context_insufficient
+                else report.summary
+            ),
+            "findings": [] if source_context_insufficient else report.findings,
+            "validation": validation,
             "source_coverage": source_coverage,
             "limitations": limitations,
             "next_actions": next_actions,

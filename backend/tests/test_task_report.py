@@ -106,3 +106,28 @@ def test_task_report_returns_full_persisted_finding() -> None:
         "estimatedCost": 0.12,
         "pricingSource": "environment",
     }
+
+
+def test_task_report_normalizes_legacy_minimal_failure() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Task(
+            id="tsk_legacy_failure",
+            project_id="prj_report",
+            agent_id="agt_report",
+            status="failed",
+            request_json="{}",
+            result_json=json.dumps({"status": "failed", "errorCode": "MCP_TOOL_CALL_FAILED"}),
+            last_error_code="MCP_TOOL_CALL_FAILED",
+            available_at=datetime.now(timezone.utc),
+        ))
+        session.commit()
+
+        report = task_report("tsk_legacy_failure", session)
+
+    assert report["taskId"] == "tsk_legacy_failure"
+    assert report["summary"]
+    assert report["findings"] == []
+    assert report["validation"]["errorCode"] == "MCP_TOOL_CALL_FAILED"
+    assert report["toolUsage"] == {"calls": 0, "durationMs": 0}

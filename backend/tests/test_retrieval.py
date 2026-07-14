@@ -17,7 +17,8 @@ def _snapshot(tmp_path: Path, idempotent: bool = True):
     idempotent_value = "true" if idempotent else "false"
     path.write_text(
         "policyId: test\nversion: 1.0.0\ntools:\n"
-        f"  Read Source: {{name: raw, category: bsl.read, mode: read-only, idempotent: {idempotent_value}}}\n",
+        f"  Read Source: {{name: raw, category: bsl.read, mode: read-only, idempotent: {idempotent_value}}}\n"
+        "  Search Code: {name: raw_search, category: code.search, mode: read-only, idempotent: true}\n",
         encoding="utf-8",
     )
     return PolicyProvider(path).load()
@@ -362,3 +363,81 @@ def test_object_aware_search_context_does_not_leak_other_documents() -> None:
     text = compacted["content"][0]["text"]
     assert "Документ.ЗаказКлиента.МодульОбъекта" in text
     assert "Документ.АктВыполненныхРабот.МодульОбъекта" not in text
+
+
+def test_exact_method_search_reads_the_single_defining_module(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+
+    class Connector:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def call_tool(self, tool_name, arguments, deadline=None):
+            self.calls.append((tool_name, arguments))
+            if tool_name == "search_code":
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": "### Документ.ЗаказКлиента.МодульОбъекта (строка 42, score: 1)\n"
+                        "```bsl\nПроцедура РассчитатьСебестоимость()\nКонецПроцедуры\n```",
+                    }]
+                }
+            return {
+                "sourceComplete": True,
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "module": arguments["module"],
+                        "source": "Процедура РассчитатьСебестоимость()\nКонецПроцедуры",
+                    }, ensure_ascii=False),
+                }],
+            }
+
+    connector = Connector()
+    result = asyncio.run(retrieve_task_context(
+        {
+            "text": "Объясни процедуру РассчитатьСебестоимость",
+            "retrieval": [{"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость", "mode": "exact"}}],
+        },
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        connector,
+    ))
+
+    assert [call[0] for call in connector.calls] == ["search_code", "read_source"]
+    assert connector.calls[1][1] == {"module": "Документ.ЗаказКлиента.МодульОбъекта"}
+    assert [call["toolName"] for call in result.calls] == ["search_code", "read_source"]
+    assert result.context[-1]["data"]["sourceComplete"] is True
+
+
+def test_method_search_does_not_guess_between_multiple_modules(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+
+    class Connector:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def call_tool(self, tool_name, arguments, deadline=None):
+            self.calls.append((tool_name, arguments))
+            return {"content": [{
+                "type": "text",
+                "text": "\n".join([
+                    "### ОбщийМодуль.А.Модуль (строка 1)",
+                    "```bsl\nФункция РассчитатьСебестоимость()\nКонецФункции\n```",
+                    "### ОбщийМодуль.Б.Модуль (строка 1)",
+                    "```bsl\nФункция РассчитатьСебестоимость()\nКонецФункции\n```",
+                ]),
+            }]}
+
+    connector = Connector()
+    asyncio.run(retrieve_task_context(
+        {
+            "text": "Объясни функцию РассчитатьСебестоимость",
+            "retrieval": [{"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость"}}],
+        },
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        connector,
+    ))
+
+    assert [call[0] for call in connector.calls] == ["search_code"]

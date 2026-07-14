@@ -63,6 +63,7 @@ const extractObjectReference = (text: string) => {
   };
 };
 const extractMethodReference = (text: string) => text.match(/\b(?:процедур\w*|функци\w*|метод\w*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)\b/i)?.[1] ?? null;
+const extractQueryText = (text: string) => text.match(/(?:^|[\r\n:])\s*(ВЫБРАТЬ\b[\s\S]*)/i)?.[1].replace(/```\s*$/, "").trim() ?? null;
 const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
@@ -71,9 +72,10 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
   const object = extractObjectReference(query);
   const searchQuery = extractMethodReference(query) ?? object?.name ?? query;
   if (agentCode === "1c_query_agent") {
+    const queryText = extractQueryText(query);
     const metadataArguments = object ? { filter: metadataCategoryForType(object.type) } : {};
     return [
-      { tool: "validate_query", arguments: { query } },
+      { tool: "validate_query", arguments: { query: queryText ?? "" } },
       { tool: "get_metadata_tree", arguments: metadataArguments },
     ];
   }
@@ -102,6 +104,9 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
     );
     return plan;
   }
+  if (extractMethodReference(query)) {
+    return [{ tool: "search_code", arguments: { query: searchQuery, limit: 50, mode: "exact" } }];
+  }
   return [
     { tool: "bsl_syntax_help", arguments: { query: searchQuery } },
     { tool: "search_code", arguments: { query: searchQuery, limit: 5, mode: "smart" } },
@@ -119,6 +124,9 @@ const publicErrorMessages: Record<string, string> = {
   TRAFFIC_CONFIRMATION_REQUIRED: "Расход трафика превысил порог предупреждения. Подтвердите запуск задачи.",
   TASK_TRAFFIC_LIMIT_EXCEEDED: "Задача остановлена: превышен максимальный трафик одного запроса.",
   MONTHLY_TRAFFIC_LIMIT_EXCEEDED: "Работа остановлена: месячный лимит трафика 9,8 GB достигнут.",
+  AGENT_REQUEST_NOT_SUPPORTED: "1C Query Agent принимает только запросы 1С, содержащие текст начиная с ВЫБРАТЬ. Для вопросов по процедурам выберите 1C Code Assistant.",
+  SOURCE_CONTEXT_INSUFFICIENT: "Проверенный ответ не сформирован: Inspector не смог получить полный исходный модуль с запрошенной процедурой.",
+  MCP_TOOL_CALL_FAILED: "MCP не выполнил read-only вызов. Проверьте доступность локального 1С bridge и повторите задачу.",
   MODEL_RESPONSE_TOO_LARGE: "Ответ модели превысил разрешенный размер и был остановлен.",
   PATCH_TASK_NOT_COMPLETED: "Finding можно использовать только из завершенной задачи.",
   PATCH_SOURCE_NOT_AVAILABLE: "В задаче нет подтвержденного полного read-only исходника для этого finding.",
@@ -361,6 +369,10 @@ function App() {
     if (!canCreateTask || !taskText.trim() || !selectedProject) return;
     if (shouldUseAuditAgent) {
       setError("Этот запрос похож на аудит. Выберите профиль 1C Audit Agent.");
+      return;
+    }
+    if (selectedAgent === "1c_query_agent" && !extractQueryText(taskText)) {
+      setError("1C Query Agent проверяет только запросы 1С, содержащие текст начиная с ВЫБРАТЬ. Для объяснения процедуры выберите 1C Code Assistant.");
       return;
     }
     setMessage("");

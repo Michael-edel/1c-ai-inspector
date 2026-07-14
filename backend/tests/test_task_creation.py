@@ -236,3 +236,45 @@ def test_create_task_blocks_missing_project_capability() -> None:
         assert blocked is not None
         assert session.scalar(select(TaskEvent).where(TaskEvent.task_id == blocked.id)).event_type == "task_blocked"
         assert session.scalars(select(ToolCall).where(ToolCall.task_id == blocked.id)).all() == []
+
+
+def test_create_task_blocks_plain_language_question_for_query_agent() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    snapshot = PolicyProvider(Path(__file__).parents[2] / "mcp_policy.yaml").load()
+    state = SimpleNamespace(
+        policy_snapshot=snapshot,
+        discovered_tools=set(snapshot.published_tools),
+        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+    )
+    request = Request({"type": "http", "app": SimpleNamespace(state=state)})
+
+    with Session(engine) as session:
+        session.add(Project(
+            id="prj_query_guard",
+            mcp_server_id="mcp_edt",
+            external_id="configuration:query-guard",
+            name="Query guard",
+            environment="sandbox",
+            available_capabilities=json.dumps(["query.validate", "metadata.read"]),
+        ))
+        session.commit()
+
+        with pytest.raises(HTTPException) as error:
+            create_task(
+                TaskCreateRequest(
+                    projectId="prj_query_guard",
+                    agentId="1c_query_agent",
+                    request={
+                        "text": "Объясни процедуру РассчитатьСебестоимость",
+                        "retrieval": [{"tool": "validate_query", "arguments": {"query": "ВЫБРАТЬ 1"}}],
+                    },
+                ),
+                request,
+                session,
+            )
+
+        assert error.value.detail["code"] == "AGENT_REQUEST_NOT_SUPPORTED"
+        blocked = session.scalar(select(Task).where(Task.project_id == "prj_query_guard"))
+        assert blocked is not None
+        assert blocked.last_error_code == "AGENT_REQUEST_NOT_SUPPORTED"

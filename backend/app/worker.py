@@ -11,6 +11,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.agents.executor import AgentExecutionError, execute_agent
+from app.reports.failure import build_failure_report
 from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.core.enums import TaskStatus
@@ -388,11 +389,30 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if task.cancel_requested:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
-            transition_task(session, task, report.status)
+            error_code = (
+                report.validation.get("errorCode") or "MODEL_REPORTED_FAILURE"
+                if report.status == TaskStatus.FAILED.value
+                else None
+            )
+            transition_task(
+                session,
+                task,
+                report.status,
+                details={"errorCode": error_code} if isinstance(error_code, str) else None,
+            )
+            task.last_error_code = error_code if isinstance(error_code, str) else None
             release_task_lease(task)
             task.result_json = report.model_dump_json(by_alias=True)
             persist_findings(session, report)
-            AuditRecorder(session).record_event(task_id, "task_completed", {"agent": agent_code})
+            event_type = {
+                TaskStatus.COMPLETED.value: "task_completed",
+                TaskStatus.FAILED.value: "task_failed",
+                TaskStatus.CANCELLED.value: "task_cancelled",
+            }[report.status]
+            event_payload = {"agent": agent_code}
+            if isinstance(error_code, str):
+                event_payload["errorCode"] = error_code
+            AuditRecorder(session).record_event(task_id, event_type, event_payload)
     except WorkerLeaseLostError:
         session.rollback()
         logger.warning("Worker lost task lease", extra={"task_id": task_id})
@@ -415,7 +435,11 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         task.status = TaskStatus.FAILED.value
                     task.last_error_code = exc.code
                     release_task_lease(task)
-                    task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
+                    task.result_json = build_failure_report(
+                        task.id,
+                        exc.code,
+                        settings.model_name,
+                    ).model_dump_json(by_alias=True)
                     AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
         return True
     except Exception:

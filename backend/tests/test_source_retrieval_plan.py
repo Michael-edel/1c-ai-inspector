@@ -1,4 +1,8 @@
-from app.services.source_retrieval_plan import ensure_full_source_retrieval
+from app.services.source_retrieval_plan import (
+    ensure_full_source_retrieval,
+    extract_query_text,
+    query_agent_request_is_supported,
+)
 
 
 PUBLISHED_TOOLS = {"read_source", "search_code", "get_object_structure"}
@@ -16,7 +20,10 @@ def test_code_assistant_receives_full_document_module_before_search() -> None:
         "tool": "read_source",
         "arguments": {"module": "Документ.ЗаказКлиента.МодульОбъекта"},
     }
-    assert normalized["retrieval"][1:] == request["retrieval"]
+    assert normalized["retrieval"][1] == {
+        "tool": "search_code",
+        "arguments": {"query": "ОбработкаЗаполнения", "mode": "exact", "limit": 50},
+    }
     assert request["retrieval"][0]["tool"] == "search_code"
 
 
@@ -62,3 +69,38 @@ def test_missing_object_or_malformed_plan_is_left_for_normal_validation() -> Non
 
     assert ensure_full_source_retrieval(no_object, "1c_code_assistant", PUBLISHED_TOOLS) is no_object
     assert ensure_full_source_retrieval(malformed, "1c_code_assistant", PUBLISHED_TOOLS) is malformed
+
+
+def test_method_only_request_is_normalized_to_exact_search() -> None:
+    request = {
+        "text": "Объясни, какую бизнес-логику реализует процедура РассчитатьСебестоимость.",
+        "retrieval": [
+            {"tool": "bsl_syntax_help", "arguments": {"query": "полный русский вопрос"}},
+            {"tool": "search_code", "arguments": {"query": "полный русский вопрос", "limit": 5, "mode": "smart"}},
+        ],
+    }
+
+    normalized = ensure_full_source_retrieval(
+        request,
+        "1c_code_assistant",
+        PUBLISHED_TOOLS | {"bsl_syntax_help"},
+    )
+
+    assert normalized["retrieval"] == [
+        {"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость", "limit": 50, "mode": "exact"}},
+    ]
+
+
+def test_query_agent_extracts_only_the_1c_query() -> None:
+    request = {
+        "text": "Проверь запрос:\n```bsl\nВЫБРАТЬ Номенклатура.Ссылка ИЗ Справочник.Номенклатура КАК Номенклатура\n```",
+        "retrieval": [{"tool": "validate_query", "arguments": {"query": "Проверь запрос"}}],
+    }
+
+    normalized = ensure_full_source_retrieval(request, "1c_query_agent", PUBLISHED_TOOLS)
+
+    assert extract_query_text(request).startswith("ВЫБРАТЬ Номенклатура.Ссылка")
+    assert normalized["retrieval"][0]["arguments"]["query"].startswith("ВЫБРАТЬ Номенклатура.Ссылка")
+    assert query_agent_request_is_supported(request) is True
+    assert query_agent_request_is_supported({"text": "Объясни процедуру"}) is False
+    assert query_agent_request_is_supported({"text": "Помоги выбрать подходящий агент"}) is False

@@ -15,7 +15,8 @@ from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
-from app.services.source_retrieval_plan import ensure_full_source_retrieval
+from app.reports.failure import normalize_failure_report
+from app.services.source_retrieval_plan import ensure_full_source_retrieval, query_agent_request_is_supported
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
 from app.services.traffic import traffic_snapshot
 
@@ -279,6 +280,18 @@ def create_task(
             "Project capabilities do not satisfy the selected agent.",
         )
 
+    if agent.code == "1c_query_agent" and not query_agent_request_is_supported(payload.request):
+        _block_task(
+            db,
+            payload,
+            project,
+            agent,
+            settings,
+            snapshot,
+            "AGENT_REQUEST_NOT_SUPPORTED",
+            "1C Query Agent accepts only requests containing a 1C query that starts with ВЫБРАТЬ.",
+        )
+
     payload = payload.model_copy(
         update={
             "request": ensure_full_source_retrieval(
@@ -401,6 +414,13 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         .order_by(ModelUsage.created_at.desc())
     )
     report = json.loads(task.result_json)
+    if task.status == TaskStatus.FAILED.value:
+        report = normalize_failure_report(
+            report,
+            task.id,
+            task.last_error_code or "TASK_FAILED",
+            snapshot.model_name if snapshot is not None else "unknown",
+        )
     model_usage = report.get("modelUsage")
     if not isinstance(model_usage, dict):
         model_usage = {}

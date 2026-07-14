@@ -236,8 +236,39 @@ def test_module_audit_marks_partial_source_context() -> None:
             ],
         )
         assert report.source_coverage == "partial"
+        assert report.status == "failed"
+        assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
         assert any("частичн" in item and "search_code" in item for item in report.limitations)
         assert report.next_actions
+
+
+def test_method_answer_cannot_complete_without_full_source() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_method_without_source",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "Объясни процедуру РассчитатьСебестоимость"}, ensure_ascii=False),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_code_assistant"),
+            get_settings(),
+            FakeAdapter(),
+            extra_context=[{"source": "MCP", "tool": "search_code", "data": {"content": []}}],
+        )
+
+    assert report.status == "failed"
+    assert report.findings == []
+    assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
 
 
 def test_module_audit_marks_complete_source_context() -> None:

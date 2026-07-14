@@ -4,6 +4,8 @@
 
 1C AI Inspector v0.6 is a read-only inspection platform. It may retrieve metadata, validate queries and read exported BSL source, but it does not write to the 1C configuration, execute database queries, apply a patch, create a Git branch or perform a deployment.
 
+Patch Planner v0.2 may generate a signed package and a manual handoff record. Both are descriptions of an operator-reviewed change, not permission to execute it. The API must keep `applied=false`, expose no apply endpoint and reject any MCP tool outside the read-only policy. Controlled apply belongs to the separately reviewed v0.3 Sandbox Executor.
+
 ## Trust Boundaries
 
 - **Browser and frontend:** untrusted client. The browser may submit task text and display data, but it cannot grant itself a role or authorize a tool.

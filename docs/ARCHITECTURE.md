@@ -24,6 +24,12 @@ Migrate service ---> PostgreSQL schema and grants
 
 The production edge exposes Caddy only. Frontend and backend are bound to the internal Compose network, and PostgreSQL is not published externally. Keycloak is an optional persistent IdP profile; an external JWKS issuer can be used instead.
 
+## Patch Planner v0.2 Boundary
+
+Patch Planner consumes persisted read-only task evidence, prepares source snapshots and diffs, verifies an operator-configured Git revision, records approval decisions and creates signed immutable packages. A manual handoff records which package was transferred to an operator, but it does not mean that the proposal was applied.
+
+The backend has no apply operation. It does not write to an EDT workspace, invoke a write-capable MCP tool, alter a Git working tree or update a 1C database. Controlled writes, sandbox branches, EDT validation and rollback are a separate v0.3 Sandbox Executor boundary.
+
 ## Request and Execution Flow
 
 1. Startup loads the policy, initializes authentication and performs bounded MCP discovery.

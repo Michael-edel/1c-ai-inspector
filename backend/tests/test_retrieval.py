@@ -9,7 +9,13 @@ import pytest
 from app.agents.registry import AgentRegistry
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
-from app.services.retrieval import RetrievalError, _compact_search_output, retrieve_task_context, tool_call_fingerprint
+from app.services.retrieval import (
+    RetrievalError,
+    _compact_read_source_output,
+    _compact_search_output,
+    retrieve_task_context,
+    tool_call_fingerprint,
+)
 
 
 def _snapshot(tmp_path: Path, idempotent: bool = True):
@@ -441,3 +447,72 @@ def test_method_search_does_not_guess_between_multiple_modules(tmp_path: Path) -
     ))
 
     assert [call[0] for call in connector.calls] == ["search_code"]
+
+
+def test_read_source_context_keeps_only_complete_requested_method() -> None:
+    source = (
+        "НеСвязанныйКод = 1;\n" * 100
+        + "Процедура РассчитатьСебестоимость()\nРезультат = 42;\nКонецПроцедуры\n"
+        + "ДругойКод = 2;\n" * 1_000
+    )
+    output = {
+        "sourceComplete": True,
+        "content": [{
+            "type": "text",
+            "text": json.dumps({
+                "module": "Документ.ЗаказКлиента.МодульОбъекта",
+                "source": source,
+            }, ensure_ascii=False),
+        }],
+    }
+
+    compacted = _compact_read_source_output(output, "РассчитатьСебестоимость")
+    payload = json.loads(compacted["content"][0]["text"])
+
+    assert compacted["sourceScope"] == "method"
+    assert payload["sourceLineStart"] == 101
+    assert payload["sourceLineEnd"] == 103
+    assert payload["source"].splitlines()[100] == "Процедура РассчитатьСебестоимость()"
+    assert "Результат = 42;" in payload["source"]
+    assert "ДругойКод" not in payload["source"]
+
+
+def test_large_module_is_compacted_before_character_limit(tmp_path: Path) -> None:
+    snapshot = _snapshot(tmp_path)
+
+    class Connector:
+        async def call_tool(self, tool_name, arguments, deadline=None):
+            if tool_name == "search_code":
+                return {"content": [{
+                    "type": "text",
+                    "text": "### ОбщийМодуль.РасчетСебестоимости.Модуль (строка 101)\n"
+                    "```bsl\nФункция РассчитатьСебестоимость()\nКонецФункции\n```",
+                }]}
+            source = (
+                "Префикс = 1;\n" * 100
+                + "Функция РассчитатьСебестоимость()\nВозврат 42;\nКонецФункции\n"
+                + "ОченьБольшойХвост = 2;\n" * 10_000
+            )
+            return {
+                "sourceComplete": True,
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({"module": arguments["module"], "source": source}, ensure_ascii=False),
+                }],
+            }
+
+    result = asyncio.run(retrieve_task_context(
+        {
+            "text": "Объясни функцию РассчитатьСебестоимость",
+            "retrieval": [{"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость"}}],
+        },
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        Connector(),
+        max_result_chars=2_000,
+    ))
+
+    assert result.calls[1]["resultSizeChars"] > 200_000
+    scoped_payload = json.loads(result.context[1]["data"]["content"][0]["text"])
+    assert "Возврат 42;" in scoped_payload["source"]
+    assert "ОченьБольшойХвост" not in scoped_payload["source"]

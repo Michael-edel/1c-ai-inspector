@@ -107,6 +107,70 @@ def _module_defining_method(output: Any, method: str) -> str | None:
     return next(iter(modules)) if len(modules) == 1 else None
 
 
+def _compact_read_source_output(output: Any, method: str) -> Any:
+    if not isinstance(output, dict):
+        return output
+    content = output.get("content")
+    if not isinstance(content, list):
+        return output
+    declaration = re.compile(
+        rf"^\s*(?P<kind>Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    compacted: list[Any] = []
+    found = False
+    for block in content:
+        if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+            continue
+        try:
+            payload = json.loads(block["text"])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict) or not isinstance(payload.get("source"), str):
+            continue
+        source = payload["source"]
+        match = declaration.search(source)
+        if match is None:
+            continue
+        terminator_name = "КонецПроцедуры" if match.group("kind").casefold() == "процедура" else "КонецФункции"
+        terminator = re.compile(
+            rf"^\s*{terminator_name}\s*;?\s*$",
+            re.IGNORECASE | re.MULTILINE,
+        ).search(source, match.start())
+        if terminator is None:
+            continue
+        line_start = source.count("\n", 0, match.start()) + 1
+        line_end = source.count("\n", 0, terminator.end()) + 1
+        snippet = source[match.start():terminator.end()]
+        scoped_source = "\n" * (line_start - 1) + snippet
+        scoped_payload = {
+            **payload,
+            "source": scoped_source,
+            "sourceComplete": True,
+            "sourceScope": "method",
+            "method": method,
+            "sourceLineStart": line_start,
+            "sourceLineEnd": line_end,
+            "moduleTotalLines": len(source.splitlines()),
+        }
+        compacted.append({**block, "text": json.dumps(scoped_payload, ensure_ascii=False)})
+        found = True
+    if not found:
+        return {
+            "sourceComplete": False,
+            "sourceScope": "method_not_found",
+            "method": method,
+            "content": [],
+        }
+    return {
+        **output,
+        "sourceComplete": True,
+        "sourceScope": "method",
+        "method": method,
+        "content": compacted,
+    }
+
+
 async def retrieve_task_context(
     request: dict[str, Any],
     definition: AgentDefinition,
@@ -196,8 +260,6 @@ async def retrieve_task_context(
             output = cached_call.get("output")
             if not isinstance(output, dict):
                 output = {}
-            if max_result_chars is not None and _serialized_size(output) > max_result_chars:
-                raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
             result_size_chars = _serialized_size(output)
             compacted_output = (
                 _compact_search_output(
@@ -209,6 +271,13 @@ async def retrieve_task_context(
                 if tool_name == "search_code"
                 else output
             )
+            context_output = (
+                _compact_read_source_output(compacted_output, requested_method)
+                if tool_name == "read_source" and requested_method is not None
+                else compacted_output
+            )
+            if max_result_chars is not None and _serialized_size(context_output) > max_result_chars:
+                raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
             calls.append({
                 "toolName": tool_name,
                 "input": arguments,
@@ -218,7 +287,7 @@ async def retrieve_task_context(
                 "resultSizeChars": result_size_chars,
                 "reused": True,
             })
-            context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
+            context.append({"source": "MCP", "tool": tool_name, "data": context_output})
             enqueue_source_read(compacted_output, tool_name, arguments)
             continue
         request_size_bytes = _serialized_bytes({"tool": tool_name, "arguments": arguments})
@@ -291,7 +360,18 @@ async def retrieve_task_context(
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
-        if max_result_chars is not None and result_size_chars > max_result_chars:
+        compacted_output = _compact_search_output(
+            output,
+            arguments.get("query", ""),
+            arguments.get("category"),
+            arguments.get("module"),
+        ) if tool_name == "search_code" else output
+        context_output = (
+            _compact_read_source_output(compacted_output, requested_method)
+            if tool_name == "read_source" and requested_method is not None
+            else compacted_output
+        )
+        if max_result_chars is not None and _serialized_size(context_output) > max_result_chars:
             call = {
                 "toolName": tool_name,
                 "input": arguments,
@@ -307,12 +387,6 @@ async def retrieve_task_context(
             if on_tool_call is not None:
                 on_tool_call(call)
             raise RetrievalError("MCP_RESULT_TOO_LARGE", calls)
-        compacted_output = _compact_search_output(
-            output,
-            arguments.get("query", ""),
-            arguments.get("category"),
-            arguments.get("module"),
-        ) if tool_name == "search_code" else output
         call = {
             "toolName": tool_name,
             "input": arguments,
@@ -326,6 +400,6 @@ async def retrieve_task_context(
         calls.append(call)
         if on_tool_call is not None:
             on_tool_call(call)
-        context.append({"source": "MCP", "tool": tool_name, "data": compacted_output})
+        context.append({"source": "MCP", "tool": tool_name, "data": context_output})
         enqueue_source_read(compacted_output, tool_name, arguments)
     return RetrievalResult(context=context, calls=calls)

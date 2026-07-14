@@ -68,11 +68,19 @@ Off-site backup evidence:
 
 Production checkout evidence:
 
-- the active checkout metadata was synchronized from stale `0d97b6c` to deployed release `d4b1d6a` without deleting local environment or operational files;
+- the active checkout was fast-forwarded to deployed release `911c050cee558032962c290d826d37db02e1034c` without deleting local environment or operational files;
 - 188 of 189 previous release files matched `d15bc5b` after BOM/CRLF normalization; the only substantive difference was the already accepted restore-drill fix;
 - root-only backup `production-checkout-pre-sync-20260714T130857Z.tar.gz` was created before synchronization;
-- all tracked files now equal the exact `d4b1d6a` blobs, `git status` is clean and `git fsck` passes;
+- all tracked files now equal the exact release blobs, `git status` is clean and `git fsck` passes;
+- `/opt/1c-ai-inspector` and its Git metadata are owned by `root:root` with mode `755`, `.env` has mode `600`, and no checkout entry is writable by group or other users;
 - production container identities remained unchanged during normalization, and the external production monitor remained green.
+
+Full-source retrieval evidence:
+
+- production task `tsk_f56e0327aad845b48142ac33f38533ac` was created through an intentionally stale retrieval plan that omitted `read_source`;
+- backend normalization inserted the mandatory full-source step and the completed execution called `read_source`, `bsl_syntax_help` and `search_code` in that order;
+- the report recorded `sourceCoverage=full`, returned three persisted findings and located the requested `ОбработкаЗаполнения` procedure;
+- this confirms that object-aware Code Assistant and Audit Agent requests cannot silently degrade to fragment-only analysis when submitted by an old frontend or external API client.
 
 Commands used:
 

@@ -52,19 +52,20 @@ def test_cancel_queued_task_is_terminal_and_audited() -> None:
     assert "task_cancelled" in event_types
 
 
-def test_cancel_running_task_sets_cooperative_flag() -> None:
+@pytest.mark.parametrize("active_status", ["discovering", "analyzing", "reporting", "running"])
+def test_cancel_active_task_sets_cooperative_flag(active_status: str) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
-        task = make_task(session, "running")
+        task = make_task(session, active_status)
         request_task_cancellation(session, task, actor="test")
         session.commit()
 
         session.refresh(task)
         event_types = session.scalars(select(TaskEvent.event_type).where(TaskEvent.task_id == task.id)).all()
 
-    assert task.status == "running"
+    assert task.status == active_status
     assert task.cancel_requested is True
     assert "task_cancel_requested" in event_types
 
@@ -87,7 +88,7 @@ def test_worker_finalizes_requested_cancellation() -> None:
     Base.metadata.create_all(engine)
 
     with Session(engine) as session:
-        task = make_task(session, "running")
+        task = make_task(session, "analyzing")
         task.cancel_requested = True
         finalize_task_cancellation(session, task, actor="worker")
         session.commit()

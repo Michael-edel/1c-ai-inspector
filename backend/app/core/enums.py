@@ -33,6 +33,10 @@ class SideEffect(StrEnum):
 
 class TaskStatus(StrEnum):
     CREATED = "created"
+    DISCOVERING = "discovering"
+    ANALYZING = "analyzing"
+    REPORTING = "reporting"
+    # Retained so tasks created by pre-v0.1 deployments can still be recovered.
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"

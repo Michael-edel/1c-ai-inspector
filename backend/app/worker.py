@@ -23,7 +23,11 @@ from app.services.audit import AuditRecorder
 from app.services.findings import persist_findings
 from app.services.retrieval import RetrievalError, retrieve_task_context, tool_call_fingerprint
 from app.services.task_cancellation import finalize_task_cancellation
-from app.services.task_state import validate_transition
+from app.services.task_state import (
+    ACTIVE_TASK_STATUSES,
+    CLAIMABLE_TASK_STATUSES,
+    transition_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +42,26 @@ def recover_stale_tasks(session, lease_timeout_sec: int) -> int:
     stale_tasks = session.scalars(
         select(Task)
         .where(
-            Task.status == TaskStatus.RUNNING.value,
+            Task.status.in_(ACTIVE_TASK_STATUSES),
             Task.heartbeat_at.is_not(None),
             Task.heartbeat_at < cutoff_dt,
         )
         .with_for_update(skip_locked=True)
     ).all()
     for task in stale_tasks:
-        task.status = TaskStatus.QUEUED.value
+        previous_status = task.status
+        task.status = TaskStatus.CREATED.value
         release_task_lease(task)
         task.last_error_code = "WORKER_LEASE_EXPIRED"
+        AuditRecorder(session).record_event(
+            task.id,
+            "task_status_changed",
+            {
+                "from": previous_status,
+                "to": TaskStatus.CREATED.value,
+                "reason": "WORKER_LEASE_EXPIRED",
+            },
+        )
         AuditRecorder(session).record_event(
             task.id,
             "task_recovered",
@@ -93,7 +107,7 @@ def assert_task_lease(session, task_id: str, lease_owner: str | None = None, *, 
     if lock:
         statement = statement.with_for_update()
     task = session.scalar(statement)
-    if task is None or task.status != TaskStatus.RUNNING.value:
+    if task is None or task.status not in ACTIVE_TASK_STATUSES:
         raise WorkerLeaseLostError(task_id)
     if lease_owner is not None and task.locked_by != lease_owner:
         raise WorkerLeaseLostError(task_id)
@@ -153,7 +167,7 @@ def refresh_task_heartbeat(
     session, task_id: str, lease_owner: str | None = None
 ) -> bool:
     task = session.get(Task, task_id)
-    if task is None or task.status != TaskStatus.RUNNING.value:
+    if task is None or task.status not in ACTIVE_TASK_STATUSES:
         return False
     if lease_owner is not None and task.locked_by != lease_owner:
         raise WorkerLeaseLostError(task_id)
@@ -202,7 +216,7 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
     recover_stale_tasks(session, lease_timeout_sec)
     statement = (
         select(Task)
-        .where(Task.status == TaskStatus.QUEUED.value, Task.available_at <= now)
+        .where(Task.status.in_(CLAIMABLE_TASK_STATUSES), Task.available_at <= now)
         .order_by(Task.created_at)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -214,8 +228,12 @@ def claim_next_task(session, lease_timeout_sec: int = 600):
         finalize_task_cancellation(session, task, actor="worker")
         session.flush()
         return None
-    validate_transition(task.status, TaskStatus.RUNNING.value)
-    task.status = TaskStatus.RUNNING.value
+    transition_task(
+        session,
+        task,
+        TaskStatus.DISCOVERING.value,
+        details={"worker": "claimed"},
+    )
     task.locked_by = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex}"
     task.locked_at = now
     task.heartbeat_at = now
@@ -307,7 +325,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if isinstance(exc, RetrievalError) and exc.code == "TASK_CANCELLED_BY_USER":
                 with session.begin():
                     task = session.get(Task, task_id)
-                    if task is not None and task.status == TaskStatus.RUNNING.value:
+                    if task is not None and task.status in ACTIVE_TASK_STATUSES:
                         finalize_task_cancellation(session, task, actor="worker")
                 return True
             if isinstance(exc, RetrievalError) and exc.code in {
@@ -326,6 +344,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 finalize_task_cancellation(session, task, actor="worker")
                 return True
             record_retrieval_calls(session, task_id, retrieval.calls, lease_owner)
+            transition_task(session, task, TaskStatus.ANALYZING.value)
         with session.begin():
             task = assert_task_lease(session, task_id, lease_owner)
             if task.cancel_requested:
@@ -345,8 +364,13 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
             if time.monotonic() >= task_deadline:
                 raise AgentExecutionError("TASK_TIMEOUT")
             assert_task_lease(session, task_id, lease_owner)
-            validate_transition(TaskStatus.RUNNING.value, report.status)
-            task.status = report.status
+            transition_task(session, task, TaskStatus.REPORTING.value)
+        with session.begin():
+            task = assert_task_lease(session, task_id, lease_owner, lock=True)
+            if task.cancel_requested:
+                finalize_task_cancellation(session, task, actor="worker")
+                return True
+            transition_task(session, task, report.status)
             release_task_lease(task)
             task.result_json = report.model_dump_json(by_alias=True)
             persist_findings(session, report)
@@ -362,7 +386,15 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                 if task.cancel_requested:
                     finalize_task_cancellation(session, task, actor="worker")
                 else:
-                    task.status = TaskStatus.FAILED.value
+                    if task.status in ACTIVE_TASK_STATUSES:
+                        transition_task(
+                            session,
+                            task,
+                            TaskStatus.FAILED.value,
+                            details={"errorCode": exc.code},
+                        )
+                    else:
+                        task.status = TaskStatus.FAILED.value
                     task.last_error_code = exc.code
                     release_task_lease(task)
                     task.result_json = json.dumps({"status": "failed", "errorCode": exc.code})
@@ -373,7 +405,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
         if task_id is not None:
             with session.begin():
                 task = session.get(Task, task_id)
-                if task is not None and task.cancel_requested and task.status == TaskStatus.RUNNING.value:
+                if task is not None and task.cancel_requested and task.status in ACTIVE_TASK_STATUSES:
                     finalize_task_cancellation(session, task, actor="worker")
                     return True
         logger.exception("Worker failed while processing a task")

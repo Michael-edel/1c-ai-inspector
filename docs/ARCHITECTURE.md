@@ -29,7 +29,7 @@ The production edge exposes Caddy only. Frontend and backend are bound to the in
 1. Startup loads the policy, initializes authentication and performs bounded MCP discovery.
 2. Discovery normalizes only policy-approved tools, computes the toolset checksum and persists the snapshot.
 3. The readiness gate checks the policy, discovered tools, capabilities, project environment and read-only publication.
-4. `POST /api/v1/tasks` creates a queued task and an immutable execution snapshot in one transaction.
+4. `POST /api/v1/tasks` creates a task in `created` and an immutable execution snapshot in one transaction.
 5. The worker claims one task with PostgreSQL row locking, assigns a lease and sends only the explicit retrieval plan to the MCP connector.
 6. Each retrieval call is bounded, validated and persisted in `tool_calls`; failed calls receive a stable error code.
 7. The model adapter receives a bounded untrusted context and a concrete `StructuredReport` schema. Its JSON response is validated before findings are persisted.
@@ -40,7 +40,7 @@ The production edge exposes Caddy only. Frontend and backend are bound to the in
 
 Alembic migrations run once through the `migrate` Compose service using `MIGRATION_DATABASE_URL`. Backend and worker use `DATABASE_URL` with the runtime role. Normal application tables receive only the permissions they need; audit tables receive runtime `SELECT, INSERT` and no `UPDATE, DELETE`.
 
-The task state machine is queue-oriented: `queued -> running -> completed`, with terminal `failed` and `cancelled` states. Heartbeat, lease recovery, cooperative cancellation, idempotent retrieval reuse and the overall task deadline protect the worker from duplicate or abandoned execution.
+The v0.1 task state machine is `created -> discovering -> analyzing -> reporting -> completed`, with terminal `failed` and `cancelled` branches. Every transition is appended to `task_events`. PostgreSQL claiming uses `created` as the queue-ready state; legacy `queued/running` rows remain recoverable during rolling deployment. Heartbeat, lease recovery, cooperative cancellation, idempotent retrieval reuse and the overall task deadline protect the worker from duplicate or abandoned execution.
 
 ## Deployment Artifacts
 

@@ -271,7 +271,7 @@ def create_task(
         agent,
         settings,
         snapshot,
-        TaskStatus.QUEUED.value,
+        TaskStatus.CREATED.value,
         "task_created",
         {"source": "api"},
     )

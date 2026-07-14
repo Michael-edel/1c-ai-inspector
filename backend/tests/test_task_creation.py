@@ -49,7 +49,7 @@ def test_create_task_persists_task_before_execution_snapshot() -> None:
             session,
         )
 
-        assert response.status == "queued"
+        assert response.status == "created"
         task = session.get(Task, response.task_id)
         snapshot_row = session.scalar(
             select(PromptExecutionSnapshot).where(

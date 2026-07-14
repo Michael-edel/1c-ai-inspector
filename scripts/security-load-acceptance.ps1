@@ -36,6 +36,9 @@ foreach ($requiredPath in @(
     if ($paths -notcontains $requiredPath) { throw "Missing Patch Planner route: $requiredPath" }
 }
 if ($paths -match "/apply(?:/|$)") { throw "Apply endpoint must not exist in proposal-only release" }
+if ($paths -match "^/api/v1/sandbox-executions") {
+    throw "Sandbox Executor routes must not exist in production with the feature flag disabled"
+}
 $dockerfile = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "..\backend\Dockerfile")
 if ($dockerfile -notmatch "USER app") {
     throw "Backend container is not configured for non-root execution"

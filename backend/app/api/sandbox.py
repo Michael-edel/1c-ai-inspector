@@ -48,6 +48,7 @@ def create_sandbox_execution(
     identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    _require_owner(identity)
     proposal = db.get(PatchProposal, payload.proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="Sandbox proposal not found")
@@ -105,9 +106,10 @@ def create_sandbox_execution(
 @router.get("")
 def list_sandbox_executions(
     limit: int = Query(default=20, ge=1, le=100),
-    _: AuthContext = Depends(require_identity),
+    identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
+    _require_owner(identity)
     rows = db.scalars(
         select(SandboxExecution)
         .order_by(SandboxExecution.created_at.desc(), SandboxExecution.id.desc())
@@ -418,9 +420,10 @@ def rollback_sandbox_execution(
 @router.get("/{execution_id}")
 def get_sandbox_execution(
     execution_id: str,
-    _: AuthContext = Depends(require_identity),
+    identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    _require_owner(identity)
     execution = db.get(SandboxExecution, execution_id)
     if execution is None:
         raise HTTPException(status_code=404, detail="Sandbox execution not found")
@@ -430,9 +433,10 @@ def get_sandbox_execution(
 @router.get("/{execution_id}/events")
 def get_sandbox_events(
     execution_id: str,
-    _: AuthContext = Depends(require_identity),
+    identity: AuthContext = Depends(require_identity),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    _require_owner(identity)
     if db.get(SandboxExecution, execution_id) is None:
         raise HTTPException(status_code=404, detail="Sandbox execution not found")
     events = db.scalars(
@@ -472,3 +476,8 @@ def _execution_response(execution: SandboxExecution) -> dict[str, object]:
         "updatedAt": execution.updated_at.isoformat(),
         "appliedToInformationBase": False,
     }
+
+
+def _require_owner(identity: AuthContext) -> None:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")

@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(discovery_task, return_exceptions=True)
 
 
-app = FastAPI(title="1C AI Inspector", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="1C AI Inspector", version="0.7.0", lifespan=lifespan)
 configure_logging()
 request_logger = logging.getLogger("app.http")
 app.include_router(system_router)

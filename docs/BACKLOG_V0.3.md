@@ -2,6 +2,8 @@
 
 1C AI Inspector - Sandbox Executor
 
+Implementation status: complete in application release v0.7; production feature flag remains disabled by default.
+
 Цель релиза: контролируемо применить одобренный подписанный Patch Planner package только в одноразовый Git worktree, выполнить оператором настроенные EDT validation и тесты, а затем передать результат в `awaiting_acceptance` либо гарантированно очистить sandbox через rollback.
 
 ## Definition of Done

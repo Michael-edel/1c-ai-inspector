@@ -2,10 +2,10 @@
 
 ## Read-only scope
 
-- The platform does not change 1C configuration, execute `execute_query`, apply BSL, update a test database, create Git branches or deploy artifacts.
-- Patch Planner remains proposal-only. Checkpoints, approvals, packages and manual handoff records describe a possible change; `applied` remains `false`. Controlled apply is deferred to v0.3 Sandbox Executor.
+- The production platform does not change 1C configuration, execute `execute_query`, update a test database or deploy artifacts.
+- Patch Planner remains proposal-only. Checkpoints, approvals, packages and manual handoff records describe a possible change; `applied` remains `false`. Controlled apply is available only inside the disabled-by-default v0.3 Sandbox Executor.
 - Only `sandbox` and `test` environments are allowed in v0.1. Staging and production execution are blocked by policy.
-- Sandbox Executor v0.3 remains disabled by default. Its future controlled writes are limited to disposable local worktrees; merge, push and information-base updates remain out of scope.
+- Sandbox Executor v0.3 remains disabled by default. Its controlled writes are limited to disposable local worktrees; validation and test adapters are operator commands, while merge, push and information-base updates remain out of scope.
 
 ## Source and MCP data
 
@@ -31,6 +31,6 @@
 
 ## Recovery and operations
 
-- Worker recovery is designed for lease expiry and idempotent read-only retrieval. It is not a distributed workflow engine and has no automatic rollback.
+- Worker recovery is designed for lease expiry and idempotent read-only retrieval. It is not a distributed workflow engine. Sandbox rollback is explicit and owner-triggered; abandoned executions require operational monitoring.
 - Backups and restore require explicit operational commands and confirmation. Application availability does not by itself prove a recent recoverable backup.
 - Production acceptance validates the deployed smoke path; it does not replace monitoring, secret rotation, backup restore drills or review of model findings by a 1C specialist.

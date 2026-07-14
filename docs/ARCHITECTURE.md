@@ -28,7 +28,7 @@ The production edge exposes Caddy only. Frontend and backend are bound to the in
 
 Patch Planner consumes persisted read-only task evidence, prepares source snapshots and diffs, verifies an operator-configured Git revision, records approval decisions and creates signed immutable packages. A manual handoff records which package was transferred to an operator, but it does not mean that the proposal was applied.
 
-The backend has no apply operation. It does not write to an EDT workspace, invoke a write-capable MCP tool, alter a Git working tree or update a 1C database. Controlled writes, sandbox branches, EDT validation and rollback are a separate v0.3 Sandbox Executor boundary.
+Patch Planner has no apply operation. It does not write to an EDT workspace, invoke a write-capable MCP tool, alter a Git working tree or update a 1C database. Controlled worktree writes, sandbox branches, EDT validation and rollback exist only behind the separate v0.3 Sandbox Executor feature boundary.
 
 ## Sandbox Executor v0.3 Boundary
 

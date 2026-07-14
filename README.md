@@ -1,16 +1,16 @@
-# 1C AI Inspector v0.6
+# 1C AI Inspector v0.7
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
 Документы контура: [Backlog v0.2](docs/BACKLOG_V0.2.md), [Backlog v0.3](docs/BACKLOG_V0.3.md), [Security Model](docs/SECURITY_MODEL.md), [Architecture Overview](docs/ARCHITECTURE.md), [Known Limitations](docs/KNOWN_LIMITATIONS.md) и [матрица ошибок](docs/ERROR_MATRIX.md).
 
-Текущий этап v0.6 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
+Текущий этап v0.7 завершает feature-flagged Sandbox Executor v0.3 поверх proposal-only Patch Planner. Основной production-контур остается read-only и не публикует sandbox routes; в отдельном локальном контуре verified owner может применить approved signed package только к disposable Git worktree, выполнить фиксированные validation/test команды и затем вручную очистить branch/worktree через rollback.
 
 Definition of Done для Patch Planner зафиксирован в `docs/BACKLOG_V0.2.md`. В v0.2 разрешена только подготовка и ручная передача подписанного пакета: Inspector всегда возвращает `applied: false`. Controlled apply, sandbox branch, EDT validation, тестовая база и rollback относятся к v0.3 Sandbox Executor.
 
-Definition of Done для Sandbox Executor зафиксирован в `docs/BACKLOG_V0.3.md`. Контур v0.3 будет регистрироваться только при `SANDBOX_EXECUTOR_ENABLED=true`; production сохраняет выключенное значение и не публикует sandbox write routes. Запись разрешается только в одноразовый Git worktree, никогда в `InfoBase1`, основной repository, staging или production.
+Definition of Done для Sandbox Executor зафиксирован в `docs/BACKLOG_V0.3.md`. Контур v0.3 регистрируется только при `SANDBOX_EXECUTOR_ENABLED=true`; production сохраняет выключенное значение и не публикует sandbox write routes. Запись разрешается только в одноразовый Git worktree, никогда в `InfoBase1`, основной repository, staging или production.
 
-Первый срез v0.3 добавляет только feature-flagged API и persistence: `POST /api/v1/sandbox-executions` проверяет owner role, approved proposal, immutable package version, SHA-256, HMAC signature и Git checkpoint, после чего сохраняет execution в `created` и append-only событие. При выключенном `SANDBOX_EXECUTOR_ENABLED` router отсутствует в OpenAPI. На этом срезе worktree ещё не создаётся и diff не применяется.
+`POST /api/v1/sandbox-executions` проверяет owner role, approved proposal, immutable package version, SHA-256, HMAC signature и Git checkpoint, после чего сохраняет execution в `created` и append-only событие. При выключенном `SANDBOX_EXECUTOR_ENABLED` router отсутствует в OpenAPI, а UI-панель Sandbox Executor скрыта.
 
 `POST /api/v1/sandbox-executions/{id}/prepare` создает уникальную ветку `inspector/<execution-id>` и одноразовый Git worktree от полного immutable commit. Repository/root берутся только из server settings, ветка и путь вычисляются из execution ID, а частично созданный worktree удаляется при ошибке. Для локального запуска задайте `SANDBOX_SOURCE_HOST_PATH` и `SANDBOX_ROOT_HOST_PATH`, затем добавьте `-f docker-compose.sandbox.yml`; используйте только отдельный disposable repository, не рабочий проект и не `InfoBase1`.
 
@@ -19,6 +19,8 @@ Definition of Done для Sandbox Executor зафиксирован в `docs/BAC
 `POST /api/v1/sandbox-executions/{id}/validate` запускает только заданный оператором `SANDBOX_VALIDATION_COMMAND` в формате JSON argv, например `["python","-m","compileall","-q","."]`. Shell не используется, HTTP payload не задает команду или путь, процесс получает очищенное окружение без application secrets, timeout ограничен `SANDBOX_COMMAND_TIMEOUT_SEC`, а output сохраняется с лимитом 64 KiB и полным SHA-256. Успех переводит execution в `testing`, ошибка или timeout — в `rollback_required`.
 
 `POST /api/v1/sandbox-executions/{id}/test` запускает отдельный фиксированный `SANDBOX_TEST_COMMAND` только в disposable worktree; подключение к тестовой базе и ее credentials задаются оператором вне HTTP. Успех останавливает execution в `awaiting_acceptance`, не выполняя merge/push или запись в 1С. Ошибка требует `POST /api/v1/sandbox-executions/{id}/rollback`; rollback также можно запросить после успешных тестов, он удаляет только вычисленные `inspector/<execution-id>` branch/worktree и идемпотентен в состоянии `rolled_back`.
+
+Сквозная локальная проверка запускается после создания approved package: `./scripts/sandbox-executor-acceptance.ps1 -OwnerToken <owner-token> -ProposalId <proposal-id> -SourceRepository <disposable-repository>`. Скрипт проходит все gates, проверяет append-only audit и invariant исходного Git checkout, затем всегда выполняет rollback. Production `security-load-acceptance.ps1` отдельно проверяет отсутствие всех `/api/v1/sandbox-executions` routes.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
@@ -46,7 +48,7 @@ docker compose --env-file .env -f docker-compose.yml -f docker-compose.patch-git
 
 `GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.
 
-`GET /api/v1/patch-proposals/{id}/package` возвращает последнюю immutable-версию подписанного ZIP-пакета с `manifest.json`, `proposal.diff`, `signature.json` и README-инструкцией. Первая выдача сохраняет пакет в PostgreSQL с SHA-256 и actor; `GET /api/v1/patch-proposals/{id}/package?version=N` получает конкретную версию, а `/package/versions` возвращает metadata без ZIP. Manifest содержит `applyAllowed: false`; `POST /api/v1/patch-proposals/{id}/package/verify` проверяет подпись и целостность загруженного package. Сервер не сохраняет ZIP на диск и не выполняет изменения.
+`GET /api/v1/patch-proposals/{id}/package` возвращает последнюю immutable-версию подписанного ZIP-пакета с `manifest.json`, `proposal.diff`, `signature.json` и README-инструкцией. Первая выдача сохраняет пакет в PostgreSQL с SHA-256 и actor; `GET /api/v1/patch-proposals/{id}/package?version=N` получает конкретную версию, а `/package/versions` возвращает metadata без ZIP. Manifest сохраняет общий запрет `applyAllowed: false`; отдельный подписанный `sandboxApplyAllowed` разрешается только approved sandbox package с Git checkpoint. `POST /api/v1/patch-proposals/{id}/package/verify` проверяет подпись и целостность загруженного package.
 
 Новая версия package создается только после `approved`. Если immutable package более раннего состояния уже существует, export сохраняет следующую версию с approved manifest, не перезаписывая архив. `POST /api/v1/patch-proposals/{id}/handoff` требует роль `maintainer` или `owner`, точные version/SHA-256 и target environment. Backend повторно проверяет хеш, HMAC-подпись, status, checkpoint и environment внутри manifest, затем добавляет `manual_handoff_created` в append-only audit. Handoff означает передачу пакета внешнему оператору и всегда возвращает `applyAllowed: false`, `applied: false`; apply endpoint отсутствует.
 

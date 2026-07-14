@@ -2,9 +2,9 @@
 
 ## Scope
 
-1C AI Inspector v0.6 is a read-only inspection platform. It may retrieve metadata, validate queries and read exported BSL source, but it does not write to the 1C configuration, execute database queries, apply a patch, create a Git branch or perform a deployment.
+1C AI Inspector v0.7 keeps its production inspection contour read-only. It may retrieve metadata, validate queries and read exported BSL source, but it does not write to the 1C configuration, execute database queries or perform a deployment. The separately feature-flagged Sandbox Executor may create and modify only its disposable local Git worktree.
 
-Patch Planner v0.2 may generate a signed package and a manual handoff record. Both are descriptions of an operator-reviewed change, not permission to execute it. The API must keep `applied=false`, expose no apply endpoint and reject any MCP tool outside the read-only policy. Controlled apply belongs to the separately reviewed v0.3 Sandbox Executor.
+Patch Planner v0.2 may generate a signed package and a manual handoff record. Both are descriptions of an operator-reviewed change, not permission to execute it. Patch Planner keeps `applied=false` and rejects every MCP tool outside the read-only policy. Controlled local apply belongs only to the separately reviewed v0.3 Sandbox Executor router.
 
 Sandbox Executor v0.3 is a separate feature-flagged trust boundary. When enabled, it may write only to a disposable Git worktree below an operator-configured root. Owner authorization, package signature/hash, immutable commit, state transition and path containment are revalidated before every side effect. Commands and filesystem roots never come from HTTP. The contour cannot merge, push, deploy or update an information base.
 

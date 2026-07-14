@@ -36,6 +36,8 @@ docker compose --env-file .env -f docker-compose.yml -f docker-compose.patch-git
 
 `GET /api/v1/patch-proposals/{id}/package` возвращает последнюю immutable-версию подписанного ZIP-пакета с `manifest.json`, `proposal.diff`, `signature.json` и README-инструкцией. Первая выдача сохраняет пакет в PostgreSQL с SHA-256 и actor; `GET /api/v1/patch-proposals/{id}/package?version=N` получает конкретную версию, а `/package/versions` возвращает metadata без ZIP. Manifest содержит `applyAllowed: false`; `POST /api/v1/patch-proposals/{id}/package/verify` проверяет подпись и целостность загруженного package. Сервер не сохраняет ZIP на диск и не выполняет изменения.
 
+Новая версия package создается только после `approved`. Если immutable package более раннего состояния уже существует, export сохраняет следующую версию с approved manifest, не перезаписывая архив. `POST /api/v1/patch-proposals/{id}/handoff` требует роль `maintainer` или `owner`, точные version/SHA-256 и target environment. Backend повторно проверяет хеш, HMAC-подпись, status, checkpoint и environment внутри manifest, затем добавляет `manual_handoff_created` в append-only audit. Handoff означает передачу пакета внешнему оператору и всегда возвращает `applyAllowed: false`, `applied: false`; apply endpoint отсутствует.
+
 `POST /api/v1/patch-proposals/{id}/revalidate` принимает текущий read-only snapshot и revision, сравнивает SHA-256 с исходным proposal и сохраняет `valid` или `stale`. Checkpoint разрешен только после `valid`; изменившийся или неполный source snapshot блокирует checkpoint.
 
 Approval transitions and first package-version creation lock the proposal row with PostgreSQL `FOR UPDATE`, so concurrent decisions cannot both commit a final state or duplicate version `1`.

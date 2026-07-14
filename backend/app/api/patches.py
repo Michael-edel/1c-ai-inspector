@@ -47,6 +47,7 @@ from app.services.patch_git_checkpoint import (
     create_git_checkpoint_ref,
     verify_git_checkpoint,
 )
+from app.services.patch_handoff import PatchHandoffError, validate_manual_handoff
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -107,6 +108,15 @@ class PatchImpactEvidence(BaseModel):
 
 class PatchImpactRequest(BaseModel):
     evidence: list[PatchImpactEvidence] = Field(default_factory=list, max_length=100)
+
+
+class PatchHandoffRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    package_version: int = Field(alias="packageVersion", ge=1)
+    package_sha256: str = Field(alias="packageSha256", pattern=r"^[0-9a-f]{64}$")
+    target_environment: str = Field(alias="targetEnvironment", min_length=1, max_length=32)
+    note: str = Field(min_length=1, max_length=10_000)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -671,29 +681,44 @@ def download_patch_package(
     if proposal is None:
         raise HTTPException(status_code=404, detail="Patch proposal not found")
     package_record = _find_package_version(db, proposal_id, version)
-    if package_record is None:
-        if version is not None:
+    if version is not None:
+        if package_record is None:
             raise HTTPException(status_code=404, detail="Patch package version not found")
-        package = build_patch_package(proposal, _package_signing_secret(request))
-        package_record = PatchPackageVersion(
-            id=f"pkg_{uuid4().hex}",
-            proposal_id=proposal.id,
-            version=1,
-            package_bytes=package,
-            package_sha256=hashlib.sha256(package).hexdigest(),
-            created_by=identity.subject,
-        )
-        db.add(package_record)
-        db.flush()
-        record_patch_event(
-            db,
-            proposal.id,
-            "package_stored",
-            identity.subject,
-            {"version": package_record.version, "sha256": package_record.package_sha256, "applyAllowed": False},
-        )
-    else:
         package = package_record.package_bytes
+    else:
+        if proposal.status != PatchStatus.APPROVED.value:
+            raise HTTPException(status_code=409, detail="PATCH_PACKAGE_REQUIRES_APPROVAL")
+        signing_secret = _package_signing_secret(request)
+        if package_record is None or not _package_matches_proposal(
+            package_record,
+            proposal,
+            signing_secret,
+        ):
+            next_version = 1 if package_record is None else package_record.version + 1
+            package = build_patch_package(proposal, signing_secret)
+            package_record = PatchPackageVersion(
+                id=f"pkg_{uuid4().hex}",
+                proposal_id=proposal.id,
+                version=next_version,
+                package_bytes=package,
+                package_sha256=hashlib.sha256(package).hexdigest(),
+                created_by=identity.subject,
+            )
+            db.add(package_record)
+            db.flush()
+            record_patch_event(
+                db,
+                proposal.id,
+                "package_stored",
+                identity.subject,
+                {
+                    "version": package_record.version,
+                    "sha256": package_record.package_sha256,
+                    "applyAllowed": False,
+                },
+            )
+        else:
+            package = package_record.package_bytes
     record_patch_event(
         db,
         proposal.id,
@@ -711,6 +736,61 @@ def download_patch_package(
             "X-Package-Sha256": package_record.package_sha256,
         },
     )
+
+
+@router.post("/{proposal_id}/handoff", status_code=status.HTTP_201_CREATED)
+def create_manual_patch_handoff(
+    proposal_id: str,
+    payload: PatchHandoffRequest,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = _locked_proposal(db, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    package = _find_package_version(db, proposal.id, payload.package_version)
+    if package is None:
+        raise HTTPException(status_code=404, detail="Patch package version not found")
+    try:
+        handoff = validate_manual_handoff(
+            proposal,
+            package,
+            identity.role,
+            payload.target_environment,
+            payload.package_sha256,
+            _package_signing_secret(request),
+        )
+    except PatchHandoffError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    event = record_patch_event(
+        db,
+        proposal.id,
+        "manual_handoff_created",
+        identity.subject,
+        {
+            "packageVersion": handoff.package_version,
+            "packageSha256": handoff.package_sha256,
+            "targetEnvironment": handoff.target_environment,
+            "note": payload.note,
+            "role": identity.role,
+            "applyAllowed": False,
+            "applied": False,
+        },
+    )
+    db.flush()
+    handoff_id = f"handoff_{event.id}"
+    db.commit()
+    return {
+        "handoffId": handoff_id,
+        "proposalId": proposal.id,
+        "packageVersion": handoff.package_version,
+        "packageSha256": handoff.package_sha256,
+        "targetEnvironment": handoff.target_environment,
+        "createdBy": identity.subject,
+        "applyAllowed": False,
+        "applied": False,
+    }
 
 
 @router.post("/{proposal_id}/package/verify")
@@ -742,6 +822,24 @@ def _find_package_version(db: Session, proposal_id: str, version: int | None) ->
     else:
         statement = statement.order_by(PatchPackageVersion.version.desc())
     return db.scalars(statement).first()
+
+
+def _package_matches_proposal(
+    package: PatchPackageVersion,
+    proposal: PatchProposal,
+    signing_secret: str,
+) -> bool:
+    verification = verify_patch_package(
+        package.package_bytes,
+        signing_secret,
+        expected_proposal_id=proposal.id,
+    )
+    return bool(
+        verification["valid"]
+        and verification.get("status") == proposal.status
+        and verification.get("targetEnvironment") == proposal.target_environment
+        and verification.get("checkpointRef") == proposal.checkpoint_ref
+    )
 
 
 def _locked_proposal(db: Session, proposal_id: str) -> PatchProposal | None:

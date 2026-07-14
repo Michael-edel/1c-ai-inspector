@@ -25,6 +25,7 @@ from app.services.patch_git_checkpoint import (
     create_git_checkpoint_ref,
     verify_git_checkpoint,
 )
+from app.services.patch_handoff import PatchHandoffError, validate_manual_handoff
 
 
 class StoredToolCall:
@@ -305,3 +306,60 @@ def test_git_checkpoint_fails_closed_without_repository_or_full_sha(tmp_path) ->
         verify_git_checkpoint(None, "a" * 40, ["module.bsl"])
     with pytest.raises(GitCheckpointError, match="PATCH_GIT_COMMIT_REQUIRED"):
         verify_git_checkpoint(tmp_path, "HEAD", ["module.bsl"])
+
+
+def test_manual_handoff_requires_approved_signed_matching_package() -> None:
+    from app.models import PatchPackageVersion, PatchProposal
+
+    proposal = PatchProposal(
+        id="pp_handoff",
+        project_id="prj_handoff",
+        status="approved",
+        title="Manual handoff",
+        summary="Approved proposal package",
+        target_environment="sandbox",
+        source_revision="a" * 40,
+        diff_text="--- a/module.bsl\n+++ b/module.bsl\n",
+        files_json="[]",
+        impact_json="[]",
+        checkpoint_ref="git-checkpoint:pp_handoff:commit:diff",
+    )
+    package_bytes = build_patch_package(proposal, "s" * 32)
+    package = PatchPackageVersion(
+        id="pkg_handoff",
+        proposal_id=proposal.id,
+        version=1,
+        package_bytes=package_bytes,
+        package_sha256=sha256(package_bytes).hexdigest(),
+        created_by="maintainer-1",
+    )
+
+    handoff = validate_manual_handoff(
+        proposal,
+        package,
+        "maintainer",
+        "sandbox",
+        package.package_sha256,
+        "s" * 32,
+    )
+
+    assert handoff.package_version == 1
+    assert handoff.package_sha256 == package.package_sha256
+    with pytest.raises(PatchHandoffError, match="PATCH_HANDOFF_ROLE_REQUIRED"):
+        validate_manual_handoff(
+            proposal,
+            package,
+            "reviewer",
+            "sandbox",
+            package.package_sha256,
+            "s" * 32,
+        )
+    with pytest.raises(PatchHandoffError, match="PATCH_HANDOFF_PACKAGE_HASH_MISMATCH"):
+        validate_manual_handoff(
+            proposal,
+            package,
+            "owner",
+            "sandbox",
+            "0" * 64,
+            "s" * 32,
+        )

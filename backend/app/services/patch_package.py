@@ -74,6 +74,9 @@ def verify_patch_package(package: bytes, secret: str, expected_proposal_id: str 
     return {
         "valid": valid,
         "proposalId": manifest.get("proposalId"),
+        "status": manifest.get("status"),
+        "targetEnvironment": manifest.get("targetEnvironment"),
+        "checkpointRef": manifest.get("checkpointRef"),
         "algorithm": "HMAC-SHA256",
         "reason": None if valid else "PACKAGE_SIGNATURE_INVALID",
     }

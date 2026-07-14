@@ -13,12 +13,12 @@ def record_patch_event(
     event_type: str,
     actor: str,
     payload: dict[str, object] | None = None,
-) -> None:
-    db.add(
-        PatchEvent(
-            proposal_id=proposal_id,
-            event_type=event_type,
-            actor=actor,
-            payload_json=json.dumps(payload or {}, ensure_ascii=False),
-        )
+) -> PatchEvent:
+    event = PatchEvent(
+        proposal_id=proposal_id,
+        event_type=event_type,
+        actor=actor,
+        payload_json=json.dumps(payload or {}, ensure_ascii=False),
     )
+    db.add(event)
+    return event

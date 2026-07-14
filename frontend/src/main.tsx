@@ -15,7 +15,7 @@ type PersistedFinding = ReportFinding & { id: string };
 type Report = { status: string; summary: string; sourceCoverage?: "full" | "partial" | "none" | "unknown"; findings: ReportFinding[]; persistedFindings: PersistedFinding[]; limitations?: string[]; nextActions?: string[]; objectsReviewed?: string[]; validation?: { readOnly?: boolean; sourceComplete?: boolean; sourceEvidence?: { status?: string; invalidCount?: number; excerptCount?: number; droppedFindings?: number }; retrievalTools?: string[] }; toolUsage?: { calls: number; durationMs: number }; modelUsage?: { model?: string; inputTokens: number; outputTokens: number; cachedInputTokens?: number; durationMs?: number; estimatedCost: number }; execution?: { promptVersion: string; modelProvider: string; modelName: string; policyVersion: string; policyChecksum: string; toolsetChecksum: string } };
 type ReportExport = { taskId: string; status: string; report: Report; audit: Audit };
 type PatchImpact = { objectFqn: string; relation: string; risk: string; source: string };
-type PatchProposal = { id: string; status: string; title: string; summary: string; sourceRevision: string | null; diff: string; files: { path: string; original: string; proposed: string }[]; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null; sourceValidationStatus: string; validationStatus: string };
+type PatchProposal = { id: string; status: string; title: string; summary: string; targetEnvironment: string; sourceRevision: string | null; diff: string; files: { path: string; original: string; proposed: string }[]; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null; sourceValidationStatus: string; validationStatus: string };
 type PatchEvent = { id: number; type: string; actor: string; payload: Record<string, unknown>; createdAt: string };
 
 const isTerminalTaskStatus = (status: string) => ["completed", "failed", "cancelled"].includes(status);
@@ -104,6 +104,11 @@ const publicErrorMessages: Record<string, string> = {
   PATCH_GIT_REPOSITORY_UNAVAILABLE: "Read-only Git repository временно недоступен.",
   PATCH_GIT_COMMIT_REQUIRED: "Для Git checkpoint укажите полный immutable commit SHA.",
   PATCH_GIT_VERIFICATION_FAILED: "Git commit или BSL-путь не прошел read-only проверку.",
+  PATCH_PACKAGE_REQUIRES_APPROVAL: "Signed package можно создать только после approval.",
+  PATCH_HANDOFF_ROLE_REQUIRED: "Ручной handoff доступен только maintainer или owner.",
+  PATCH_HANDOFF_REQUIRES_APPROVAL: "Ручной handoff доступен только для approved proposal.",
+  PATCH_HANDOFF_PACKAGE_HASH_MISMATCH: "SHA-256 выбранной версии package не совпадает.",
+  PATCH_HANDOFF_PACKAGE_INVALID: "Подпись package не прошла проверку.",
 };
 const sourceCoverageLabels: Record<string, string> = { full: "полный исходный модуль", partial: "частичные фрагменты", none: "исходный код не получен", unknown: "не определен" };
 const shortChecksum = (value: string) => `${value.slice(0, 16)}…`;
@@ -524,8 +529,34 @@ function App() {
     setPatchBusy(true);
     try {
       await downloadFile(`/api/v1/patch-proposals/${patchProposal.id}/package`, `${patchProposal.id}.zip`, { headers: { Authorization: `Bearer ${authToken.trim()}` } });
+      setMessage("Подписанный package сохранен и загружен. Теперь можно создать ручной handoff.");
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : "Не удалось экспортировать package");
+    } finally {
+      setPatchBusy(false);
+    }
+  };
+
+  const createManualHandoff = async () => {
+    if (!patchProposal || !authToken.trim()) {
+      setError("Для ручного handoff нужен Inspector token.");
+      return;
+    }
+    setPatchBusy(true);
+    setError("");
+    try {
+      const versions = await api<{ versions: { version: number; sha256: string }[] }>(`/api/v1/patch-proposals/${patchProposal.id}/package/versions`, { headers: { Authorization: `Bearer ${authToken.trim()}` } });
+      const latest = versions.versions[0];
+      if (!latest) throw new Error("Сначала экспортируйте подписанный package.");
+      const handoff = await api<{ handoffId: string; applied: boolean }>(`/api/v1/patch-proposals/${patchProposal.id}/handoff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken.trim()}` },
+        body: JSON.stringify({ packageVersion: latest.version, packageSha256: latest.sha256, targetEnvironment: patchProposal.targetEnvironment, note: patchNote.trim() }),
+      });
+      await loadPatch(patchProposal.id);
+      setMessage(`Ручной handoff ${handoff.handoffId} записан. Изменения не применялись.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось создать ручной handoff");
     } finally {
       setPatchBusy(false);
     }
@@ -542,6 +573,7 @@ function App() {
       <header className="topbar"><div><p className="eyebrow">CONTROL SURFACE</p><h1>Инспектор 1С</h1></div><button className="ghost-button" onClick={() => void refresh()}>Обновить состояние</button></header>
       <section className="hero-grid" id="overview"><div className="hero-copy"><span className="status-kicker">READ-ONLY MVP</span><h2>Проверяем контур до запуска агента.</h2><p>Каждый вызов проходит через policy, нормализованный toolset и execution snapshot. Запись в проект не разрешена.</p></div><div className={`readiness-card ${readiness?.status === "ready" ? "ready" : "blocked"}`}><div className="card-label">READINESS GATE</div><div className="readiness-status">{readiness?.status === "ready" ? "READY" : "NOT READY"}</div><p>{readiness?.reasons?.[0] === "no_tools_discovered" ? "MCP tools ещё не обнаружены" : "Проверка выполняется"}</p><div className="progress-line"><span /></div></div></section>
       {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
+      {patchProposal?.status === "approved" ? <section className="panel patch-handoff-panel"><div className="panel-heading"><div><span className="panel-index">OUT</span><h3>Ручной package handoff</h3></div><span className="panel-note">APPLIED: FALSE</span></div><p className="panel-intro">Сначала экспортируйте signed package, затем зафиксируйте передачу его точной версии оператору. Inspector не применяет diff.</p><button type="button" className="primary-button" onClick={() => void createManualHandoff()} disabled={patchBusy || !authToken.trim()}>СОЗДАТЬ РУЧНОЙ HANDOFF</button></section> : null}
       {report?.persistedFindings.length ? <section className="panel patch-source-panel"><div className="panel-heading"><div><span className="panel-index">SRC</span><h3>Источник Patch Planner</h3></div><span className="panel-note">READ-ONLY PROVENANCE</span></div><label htmlFor="patch-finding">Finding с сохраненным исходником</label><select id="patch-finding" value={patchFindingId} onChange={(event) => setPatchFindingId(event.target.value)}><option value="">Ручной ввод Original</option>{report.persistedFindings.map((finding, index) => <option key={finding.id} value={finding.id}>Finding {index + 1}: {finding.objectFqn} · {finding.module}</option>)}</select><p className="panel-intro">При выбранном finding backend игнорирует поле Original и берет код только из успешного сохраненного read_source. Для создания нужен Inspector token.</p></section> : null}
       {taskId && <section className={`task-monitor ${isTerminalTaskStatus(taskStatus) ? "finished" : ""} ${taskStatus === "failed" ? "failed" : ""} ${taskCancelRequested ? "cancel-requested" : ""}`} aria-live="polite"><div className="task-monitor-head"><div><span className="card-label">TASK MONITOR</span><strong>{taskStatusLabel(taskStatus)}</strong></div><div className="task-monitor-actions"><span className="task-elapsed">Прошло {formatElapsed(taskElapsedSeconds)}</span>{isCancellableTaskStatus(taskStatus) && <button type="button" className="ghost-button compact cancel-button" onClick={() => void cancelTask()} disabled={cancelBusy || taskCancelRequested}>{cancelBusy ? "ОТМЕНА..." : taskCancelRequested ? "ОТМЕНА ЗАПРОШЕНА" : "ОТМЕНИТЬ"}</button>}</div></div><div className="task-monitor-track"><span /></div><p>{taskCancelRequested && !isTerminalTaskStatus(taskStatus) ? "Запрос на отмену принят. Текущий read-only вызов завершится, новые этапы не начнутся." : taskStatusDescription(taskStatus)}</p>{taskPollingError && <p className="task-monitor-warning">{taskPollingError}</p>}{taskLastErrorCode && <p className="task-monitor-warning">Код ошибки: {taskLastErrorCode}</p>}{taskElapsedSeconds >= 45 && !isTerminalTaskStatus(taskStatus) && !taskCancelRequested && <p className="task-monitor-warning">Проверка длится дольше обычного. MCP или модель могут отвечать медленно.</p>}</section>}
       <section className="metrics-row"><div className="metric"><span>Policy</span><strong>{policy?.version ?? "—"}</strong><small>{policy?.policyId ?? "loading"}</small></div><div className="metric"><span>Capabilities</span><strong>{policy?.normalizedTools.length ?? 0}</strong><small>{readiness?.capabilitiesStatus ?? "—"}</small></div><div className="metric"><span>Discovered</span><strong>{policy?.discoveredTools.length ?? 0}</strong><small>from MCP server</small></div></section>

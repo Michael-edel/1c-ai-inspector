@@ -15,6 +15,7 @@ class ModelResult:
     input_tokens: int
     output_tokens: int
     response_checksum: str = ""
+    cached_input_tokens: int = 0
 
 
 class ModelAdapter(Protocol):
@@ -86,11 +87,13 @@ class OpenAICompatibleAdapter:
                 content = content.removeprefix("```").removeprefix("json").removesuffix("```").strip()
             json.loads(content)
             usage = body.get("usage", {})
+            input_details = usage.get("prompt_tokens_details") or usage.get("input_tokens_details") or {}
             return ModelResult(
                 content=content,
                 input_tokens=int(usage.get("prompt_tokens", 0)),
                 output_tokens=int(usage.get("completion_tokens", 0)),
                 response_checksum=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                cached_input_tokens=int(input_details.get("cached_tokens", 0)),
             )
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ModelError("MODEL_RESPONSE_INVALID") from exc

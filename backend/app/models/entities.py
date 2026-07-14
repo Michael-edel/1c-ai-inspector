@@ -116,7 +116,9 @@ class ModelUsage(TimestampMixin, Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     estimated_cost: Mapped[float] = mapped_column(nullable=False, default=0)
+    pricing_source: Mapped[str] = mapped_column(String(128), nullable=False, default="environment")
     response_checksum: Mapped[str | None] = mapped_column(String(64))
 
 

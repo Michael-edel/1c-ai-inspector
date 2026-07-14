@@ -132,9 +132,12 @@ def test_agent_execution_persists_model_usage() -> None:
         assert report.tool_usage.duration_ms == 17
         assert report.model_usage.input_tokens == 3
         assert report.model_usage.output_tokens == 5
+        assert report.model_usage.cached_input_tokens == 0
         usage = session.scalars(select(ModelUsage).where(ModelUsage.task_id == task.id)).one()
         assert usage.input_tokens == 3
         assert usage.output_tokens == 5
+        assert usage.cached_input_tokens == 0
+        assert usage.pricing_source == "environment"
         expected_content = FakeAdapter().complete([{
             "role": "user",
             "content": "Task envelope:\n" + json.dumps({"taskId": task.id}),

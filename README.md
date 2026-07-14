@@ -267,7 +267,7 @@ Live-проверка Audit Agent также подтверждена: read-only
 
 Агенты v0.1: `1c_code_assistant`, `1c_query_agent`, `1c_audit_agent`. Structured report требует непустой `evidence` для каждого finding и ссылку на объект 1С.
 
-Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Audit endpoint возвращает длительность и статусы tool calls, размеры результатов, токены, estimated cost и checksum ответа модели без раскрытия самого ответа.
+Стоимость модели считается только по явно заданным `MODEL_INPUT_COST_PER_1K` и `MODEL_OUTPUT_COST_PER_1K`; значения `0` по умолчанию не маскируют неизвестные тарифы. Model adapter отдельно сохраняет `cachedInputTokens`, а `pricingSource=environment` показывает, что тарифы взяты из этих environment-настроек. Audit endpoint возвращает длительность и статусы tool calls, размеры результатов, токены, стоимость, источник тарифа и checksum ответа модели без раскрытия самого ответа.
 
 Worker вызывает модель только после claim задачи. Ответ обязан соответствовать `StructuredReport`; findings без evidence отклоняются, а token usage и estimated cost пишутся в audit.
 Контекст задачи ограничивается `MAX_CONTEXT_CHARS` и передаётся модели как `<untrusted_context>`: содержимое проекта трактуется только как данные, а не как инструкции. Findings и evidence сохраняются в `findings` и `finding_status_events`.

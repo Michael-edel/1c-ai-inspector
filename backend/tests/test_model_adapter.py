@@ -16,7 +16,11 @@ def test_openai_compatible_adapter_parses_content_and_usage() -> None:
             200,
             json={
                 "choices": [{"message": {"content": '{"ok":true}'}}],
-                "usage": {"prompt_tokens": 12, "completion_tokens": 7},
+                "usage": {
+                    "prompt_tokens": 12,
+                    "completion_tokens": 7,
+                    "prompt_tokens_details": {"cached_tokens": 4},
+                },
             },
         )
 
@@ -30,6 +34,7 @@ def test_openai_compatible_adapter_parses_content_and_usage() -> None:
     assert json.loads(result.content) == {"ok": True}
     assert result.input_tokens == 12
     assert result.output_tokens == 7
+    assert result.cached_input_tokens == 4
     assert result.response_checksum == hashlib.sha256(result.content.encode("utf-8")).hexdigest()
 
 

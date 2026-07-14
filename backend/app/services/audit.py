@@ -50,6 +50,8 @@ class AuditRecorder:
         input_cost_per_1k: float,
         output_cost_per_1k: float,
         response_checksum: str | None = None,
+        cached_input_tokens: int = 0,
+        pricing_source: str = "environment",
     ) -> None:
         self.session.add(
             ModelUsage(
@@ -58,7 +60,9 @@ class AuditRecorder:
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cached_input_tokens=cached_input_tokens,
                 response_checksum=response_checksum,
+                pricing_source=pricing_source,
                 estimated_cost=estimate_cost(
                     input_tokens, output_tokens, input_cost_per_1k, output_cost_per_1k
                 ),

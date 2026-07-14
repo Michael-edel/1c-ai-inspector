@@ -280,6 +280,7 @@ def execute_agent(
             "model_usage": ModelUsage(
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
+                cached_input_tokens=result.cached_input_tokens,
                 estimated_cost=estimate_cost(
                     result.input_tokens,
                     result.output_tokens,
@@ -297,6 +298,8 @@ def execute_agent(
         result.output_tokens,
         settings.model_input_cost_per_1k,
         settings.model_output_cost_per_1k,
-        result.response_checksum or hashlib.sha256(result.content.encode("utf-8")).hexdigest(),
+        response_checksum=result.response_checksum or hashlib.sha256(result.content.encode("utf-8")).hexdigest(),
+        cached_input_tokens=result.cached_input_tokens,
+        pricing_source="environment",
     )
     return report

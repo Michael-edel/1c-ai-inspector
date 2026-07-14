@@ -13,17 +13,19 @@ base_url = sys.argv[1].rstrip("/")
 minimum_tools = int(sys.argv[2])
 
 
+def request_raw(path):
+    with urllib.request.urlopen(f"{base_url}{path}", timeout=20) as response:
+        return response.read(), response.headers
+
+
 def request(path):
-    with urllib.request.urlopen(f"{base_url}{path}", timeout=20) as response:
-        return json.load(response)
+    body, _ = request_raw(path)
+    return json.loads(body)
 
 
-def request_with_headers(path):
-    with urllib.request.urlopen(f"{base_url}{path}", timeout=20) as response:
-        return json.load(response), response.headers
-
-
-health, health_headers = request_with_headers("/health")
+root_body, root_headers = request_raw("/")
+health_body, health_headers = request_raw("/health")
+health = json.loads(health_body)
 readiness = request("/api/v1/system/readiness")
 policy = request("/api/v1/system/policy")
 projects = request("/api/v1/projects")
@@ -31,6 +33,10 @@ history = request("/api/v1/tasks")
 discovered = policy.get("discoveredTools", [])
 published = policy.get("publishedTools", [])
 
+if "no-store" not in root_headers.get("Cache-Control", ""):
+    raise SystemExit("Production HTML shell is cacheable")
+if b"/@vite/client" in root_body or b"/src/main.tsx" in root_body:
+    raise SystemExit("Production HTML exposes Vite development entrypoints")
 if health.get("status") != "ok":
     raise SystemExit("Production health is not ok")
 if base_url.lower().startswith("https://"):

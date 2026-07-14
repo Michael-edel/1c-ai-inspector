@@ -23,6 +23,9 @@ def test_frontend_container_uses_lockfile_and_non_root_user() -> None:
     assert "npm run dev" not in dockerfile
     assert "try_files $uri $uri/ /index.html" in nginx
     assert "proxy_pass http://backend:8000" in nginx
+    server_headers = nginx.split("location /api/", maxsplit=1)[0]
+    assert 'add_header Cache-Control "no-store" always;' in server_headers
+    assert 'add_header Cache-Control "public, immutable";' in nginx
 
 
 def test_frontend_fonts_are_bundled_without_remote_stylesheets() -> None:

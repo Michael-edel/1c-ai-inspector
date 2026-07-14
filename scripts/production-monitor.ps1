@@ -6,6 +6,14 @@ param(
 $ErrorActionPreference = "Stop"
 $base = $BaseUrl.TrimEnd("/")
 
+$rootResponse = Invoke-WebRequest -UseBasicParsing -Uri "$base/"
+if ([string]$rootResponse.Headers["Cache-Control"] -notmatch "(?:^|,)\s*no-store(?:,|$)") {
+    throw "Production HTML shell is cacheable"
+}
+if ($rootResponse.Content -match "/@vite/client|/src/main\.tsx") {
+    throw "Production HTML exposes Vite development entrypoints"
+}
+
 $healthResponse = Invoke-WebRequest -UseBasicParsing -Uri "$base/health"
 $health = $healthResponse.Content | ConvertFrom-Json
 if ($health.status -ne "ok") { throw "Production health is not ok" }

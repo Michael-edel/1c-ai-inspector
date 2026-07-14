@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.agents.executor import AgentExecutionError, execute_agent
+from app.agents.executor import AgentExecutionError, build_agent_failure_report, execute_agent
 from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.modeling import ModelResult
@@ -107,6 +107,32 @@ class SourceEvidenceAdapter(FakeAdapter):
             "nextActions": [],
         }
         return ModelResult(json.dumps(report, ensure_ascii=False), 3, 5)
+
+
+def test_model_failure_report_preserves_completed_retrieval() -> None:
+    report = build_agent_failure_report(
+        "tsk_model_failed",
+        "MODEL_REQUEST_FAILED",
+        "gpt-test",
+        extra_context=[{
+            "source": "MCP",
+            "tool": "read_source",
+            "data": {"sourceComplete": True, "content": []},
+        }],
+        tool_calls=[
+            {"toolName": "search_code", "durationMs": 2299},
+            {"toolName": "read_source", "durationMs": 7120},
+        ],
+    )
+
+    assert report.status == "failed"
+    assert report.source_coverage == "full"
+    assert report.tool_usage.calls == 2
+    assert report.tool_usage.duration_ms == 9419
+    assert report.validation["errorCode"] == "MODEL_REQUEST_FAILED"
+    assert "Исходный код получен" in report.summary
+    assert any("MODEL API" in item for item in report.limitations)
+    assert any("Повторить задачу" in item for item in report.next_actions)
 
 
 def test_agent_execution_persists_model_usage() -> None:

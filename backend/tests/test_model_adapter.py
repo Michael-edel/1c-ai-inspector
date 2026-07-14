@@ -57,8 +57,10 @@ def test_openai_compatible_adapter_accepts_content_blocks_and_json_fence() -> No
     assert json.loads(result.content) == {"ok": True}
 
 
-def test_openai_compatible_adapter_retries_transient_http_failure() -> None:
+def test_openai_compatible_adapter_retries_transient_http_failure(monkeypatch) -> None:
     attempts = 0
+    delays: list[float] = []
+    monkeypatch.setattr(time, "sleep", delays.append)
 
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal attempts
@@ -74,6 +76,7 @@ def test_openai_compatible_adapter_retries_transient_http_failure() -> None:
 
     assert json.loads(result.content) == {"ok": True}
     assert attempts == 2
+    assert delays == [1]
 
 
 def test_openai_compatible_adapter_does_not_retry_invalid_json_response() -> None:

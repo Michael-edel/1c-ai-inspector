@@ -24,6 +24,36 @@ class AgentExecutionError(RuntimeError):
         self.code = code
 
 
+def build_agent_failure_report(
+    task_id: str,
+    error_code: str,
+    model_name: str,
+    extra_context: list[dict[str, object]] | None = None,
+    tool_calls: list[dict[str, object]] | None = None,
+) -> StructuredReport:
+    calls = tool_calls or []
+    source_coverage = _source_coverage(extra_context)
+    report = build_failure_report(task_id, error_code, model_name)
+    update: dict[str, object] = {
+        "source_coverage": source_coverage,
+        "tool_usage": ToolUsage(
+            calls=len(calls),
+            duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),
+        ),
+    }
+    if error_code.startswith("MODEL_") and source_coverage == "full":
+        update.update({
+            "summary": "Исходный код получен, но MODEL API не сформировал проверенный ответ.",
+            "limitations": [
+                "Read-only MCP retrieval завершен успешно; ошибка возникла при обращении к MODEL API."
+            ],
+            "next_actions": [
+                "Повторить задачу; при повторном сбое проверить доступность и лимиты MODEL API."
+            ],
+        })
+    return report.model_copy(update=update)
+
+
 MODULE_ALIASES = {
     "ObjectModule": "МодульОбъекта",
     "ManagerModule": "МодульМенеджера",

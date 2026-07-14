@@ -10,8 +10,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.agents.executor import AgentExecutionError, execute_agent
-from app.reports.failure import build_failure_report
+from app.agents.executor import AgentExecutionError, build_agent_failure_report, execute_agent
 from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.core.enums import TaskStatus
@@ -257,6 +256,7 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
     task_claimed_at: float | None = None
     task_deadline: float | None = None
     completed_calls: dict[str, dict[str, object]] = {}
+    retrieval = None
     heartbeat_stop = threading.Event()
     heartbeat_thread: threading.Thread | None = None
     try:
@@ -435,10 +435,12 @@ def process_one_task(lease_timeout_sec: int = 600) -> bool:
                         task.status = TaskStatus.FAILED.value
                     task.last_error_code = exc.code
                     release_task_lease(task)
-                    task.result_json = build_failure_report(
+                    task.result_json = build_agent_failure_report(
                         task.id,
                         exc.code,
                         settings.model_name,
+                        retrieval.context if retrieval is not None else None,
+                        retrieval.calls if retrieval is not None else None,
                     ).model_dump_json(by_alias=True)
                     AuditRecorder(session).record_event(task_id, "task_failed", {"errorCode": exc.code})
         return True

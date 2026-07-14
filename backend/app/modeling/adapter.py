@@ -63,8 +63,12 @@ class OpenAICompatibleAdapter:
             except _RetryableModelError as exc:
                 if attempt >= self.settings.model_retries:
                     raise ModelError(exc.code) from exc
-                if self.deadline is not None and time.monotonic() >= self.deadline:
-                    raise ModelTimeoutError("TASK_TIMEOUT") from exc
+                retry_delay = min(2 ** attempt, 2)
+                if self.deadline is not None:
+                    remaining = self.deadline - time.monotonic()
+                    if remaining <= retry_delay:
+                        raise ModelTimeoutError("TASK_TIMEOUT") from exc
+                time.sleep(retry_delay)
         raise ModelError("MODEL_REQUEST_FAILED")
 
     def _complete_once(self, messages: list[dict[str, str]]) -> ModelResult:

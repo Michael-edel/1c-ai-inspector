@@ -57,6 +57,14 @@ Off-site backup evidence:
 - `last-success.json` records the verified filenames, hashes, sizes and UTC completion time without storing credentials;
 - Windows task `OneCAIInspector-OffsiteBackup` completed manually with result `0x00000000` and is scheduled daily at 09:00 with `StartWhenAvailable` and three retries.
 
+Production checkout evidence:
+
+- the active checkout metadata was synchronized from stale `0d97b6c` to deployed release `d4b1d6a` without deleting local environment or operational files;
+- 188 of 189 previous release files matched `d15bc5b` after BOM/CRLF normalization; the only substantive difference was the already accepted restore-drill fix;
+- root-only backup `production-checkout-pre-sync-20260714T130857Z.tar.gz` was created before synchronization;
+- all tracked files now equal the exact `d4b1d6a` blobs, `git status` is clean and `git fsck` passes;
+- production container identities remained unchanged during normalization, and the external production monitor remained green.
+
 Commands used:
 
 ```powershell

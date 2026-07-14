@@ -18,6 +18,33 @@ class PreparedSandbox:
     commit_sha: str
 
 
+def remove_sandbox_worktree(
+    source_repository: Path | None,
+    sandbox_root: Path | None,
+    execution_id: str,
+    branch_name: str | None,
+    worktree_path: str | None,
+) -> None:
+    if not re.fullmatch(r"sbe_[0-9a-f]{32}", execution_id):
+        raise SandboxGitError("SANDBOX_EXECUTION_ID_INVALID")
+    repository = _existing_directory(source_repository, "SANDBOX_SOURCE_REPOSITORY_UNAVAILABLE")
+    root = _existing_directory(sandbox_root, "SANDBOX_ROOT_UNAVAILABLE")
+    if repository == root or repository in root.parents or root in repository.parents:
+        raise SandboxGitError("SANDBOX_PATHS_OVERLAP")
+    expected_branch = f"inspector/{execution_id}"
+    expected_worktree = (root / execution_id).resolve()
+    if branch_name != expected_branch or not worktree_path:
+        raise SandboxGitError("SANDBOX_ROLLBACK_TARGET_INVALID")
+    if Path(worktree_path).resolve() != expected_worktree or expected_worktree.parent != root:
+        raise SandboxGitError("SANDBOX_ROLLBACK_TARGET_INVALID")
+    if expected_worktree.exists():
+        _git(repository, "worktree", "remove", "--force", str(expected_worktree))
+    if _branch_exists(repository, expected_branch):
+        _git(repository, "branch", "-D", expected_branch)
+    if expected_worktree.exists() or _branch_exists(repository, expected_branch):
+        raise SandboxGitError("SANDBOX_ROLLBACK_FAILED")
+
+
 def prepare_sandbox_worktree(
     source_repository: Path | None,
     sandbox_root: Path | None,

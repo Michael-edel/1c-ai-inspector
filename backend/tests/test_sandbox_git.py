@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from app.services.sandbox_git import SandboxGitError, prepare_sandbox_worktree
+from app.services.sandbox_git import (
+    SandboxGitError,
+    prepare_sandbox_worktree,
+    remove_sandbox_worktree,
+)
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -59,3 +63,34 @@ def test_prepare_worktree_rejects_overlapping_paths(tmp_path: Path) -> None:
             "sbe_0123456789abcdef0123456789abcdef",
             "0" * 40,
         )
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_remove_worktree_deletes_only_execution_branch_and_path(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    root = tmp_path / "sandboxes"
+    source.mkdir()
+    root.mkdir()
+    _git(source, "init")
+    _git(source, "config", "user.email", "sandbox@example.invalid")
+    _git(source, "config", "user.name", "Sandbox Test")
+    (source / "module.bsl").write_text("A\n", encoding="utf-8")
+    _git(source, "add", "module.bsl")
+    _git(source, "commit", "-m", "fixture")
+    commit_sha = _git(source, "rev-parse", "HEAD")
+    execution_id = "sbe_11111111111111111111111111111111"
+    prepared = prepare_sandbox_worktree(source, root, execution_id, commit_sha)
+    (prepared.worktree_path / "module.bsl").write_text("changed\n", encoding="utf-8")
+
+    remove_sandbox_worktree(
+        source,
+        root,
+        execution_id,
+        prepared.branch_name,
+        str(prepared.worktree_path),
+    )
+
+    assert prepared.worktree_path.exists() is False
+    assert _git(source, "branch", "--list", prepared.branch_name) == ""
+    assert (source / "module.bsl").read_text(encoding="utf-8") == "A\n"
+    assert _git(source, "status", "--porcelain") == ""

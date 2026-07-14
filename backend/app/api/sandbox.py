@@ -22,7 +22,11 @@ from app.services.sandbox_audit import record_sandbox_event
 from app.services.sandbox_apply import SandboxApplyError, apply_verified_package
 from app.services.sandbox_command import SandboxCommandError, run_operator_command
 from app.services.sandbox_workflow import SandboxWorkflowError, validate_execution_request
-from app.services.sandbox_git import SandboxGitError, prepare_sandbox_worktree
+from app.services.sandbox_git import (
+    SandboxGitError,
+    prepare_sandbox_worktree,
+    remove_sandbox_worktree,
+)
 from app.services.sandbox_workflow import transition_sandbox_status
 
 router = APIRouter(prefix="/api/v1/sandbox-executions", tags=["sandbox-executions"])
@@ -290,6 +294,123 @@ def validate_sandbox_execution(
             "timedOut": result.timed_out,
         },
     )
+    db.commit()
+    return _execution_response(execution)
+
+
+@router.post("/{execution_id}/test")
+def test_sandbox_execution(
+    execution_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    settings = request.app.state.settings
+    if not settings.sandbox_test_command:
+        raise HTTPException(status_code=503, detail="SANDBOX_TEST_NOT_CONFIGURED")
+    if not execution.worktree_path:
+        raise HTTPException(status_code=409, detail="SANDBOX_WORKTREE_NOT_PREPARED")
+    if execution.status != "testing":
+        raise HTTPException(status_code=409, detail="SANDBOX_STATE_TRANSITION_INVALID")
+    record_sandbox_event(db, execution.id, "sandbox_test_started", identity.subject)
+    db.commit()
+    try:
+        result = run_operator_command(
+            settings.sandbox_test_command,
+            Path(execution.worktree_path),
+            settings.sandbox_root,
+            settings.sandbox_command_timeout_sec,
+        )
+    except SandboxCommandError as exc:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = str(exc)
+        record_sandbox_event(
+            db,
+            execution.id,
+            "sandbox_test_failed",
+            identity.subject,
+            {"errorCode": str(exc)},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution.test_json = json.dumps(result.as_record(), ensure_ascii=False)
+    if result.succeeded:
+        execution.status = transition_sandbox_status(execution.status, "awaiting_acceptance")
+        execution.last_error_code = None
+        event_type = "sandbox_test_passed"
+    else:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = (
+            "SANDBOX_TEST_TIMEOUT" if result.timed_out else "SANDBOX_TEST_FAILED"
+        )
+        event_type = "sandbox_test_failed"
+    record_sandbox_event(
+        db,
+        execution.id,
+        event_type,
+        identity.subject,
+        {
+            "exitCode": result.exit_code,
+            "durationMs": result.duration_ms,
+            "outputBytes": result.output_bytes,
+            "outputSha256": result.output_sha256,
+            "timedOut": result.timed_out,
+        },
+    )
+    db.commit()
+    return _execution_response(execution)
+
+
+@router.post("/{execution_id}/rollback")
+def rollback_sandbox_execution(
+    execution_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    if execution.status == "rolled_back":
+        return _execution_response(execution)
+    try:
+        if execution.status == "awaiting_acceptance":
+            execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.status = transition_sandbox_status(execution.status, "rolling_back")
+    except SandboxWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record_sandbox_event(db, execution.id, "sandbox_rollback_started", identity.subject)
+    db.commit()
+    try:
+        remove_sandbox_worktree(
+            request.app.state.settings.sandbox_source_repository,
+            request.app.state.settings.sandbox_root,
+            execution.id,
+            execution.branch_name,
+            execution.worktree_path,
+        )
+    except SandboxGitError as exc:
+        execution.status = transition_sandbox_status(execution.status, "rollback_required")
+        execution.last_error_code = str(exc)
+        record_sandbox_event(
+            db,
+            execution.id,
+            "sandbox_rollback_failed",
+            identity.subject,
+            {"errorCode": str(exc)},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution.status = transition_sandbox_status(execution.status, "rolled_back")
+    execution.last_error_code = None
+    record_sandbox_event(db, execution.id, "sandbox_rolled_back", identity.subject)
     db.commit()
     return _execution_response(execution)
 

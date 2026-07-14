@@ -52,5 +52,6 @@ def test_sandbox_state_machine_rejects_skipped_gates() -> None:
     assert transition_sandbox_status("created", "preparing") == "preparing"
     assert transition_sandbox_status("testing", "awaiting_acceptance") == "awaiting_acceptance"
     assert transition_sandbox_status("rollback_required", "rolling_back") == "rolling_back"
+    assert transition_sandbox_status("awaiting_acceptance", "rollback_required") == "rollback_required"
     with pytest.raises(SandboxWorkflowError, match="SANDBOX_STATE_TRANSITION_INVALID"):
         transition_sandbox_status("created", "applying")

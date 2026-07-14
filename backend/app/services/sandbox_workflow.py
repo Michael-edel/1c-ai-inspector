@@ -31,10 +31,16 @@ ALLOWED_TRANSITIONS = {
         SandboxExecutionStatus.AWAITING_ACCEPTANCE.value,
         SandboxExecutionStatus.ROLLBACK_REQUIRED.value,
     },
+    SandboxExecutionStatus.AWAITING_ACCEPTANCE.value: {
+        SandboxExecutionStatus.ROLLBACK_REQUIRED.value
+    },
     SandboxExecutionStatus.ROLLBACK_REQUIRED.value: {
         SandboxExecutionStatus.ROLLING_BACK.value
     },
-    SandboxExecutionStatus.ROLLING_BACK.value: {SandboxExecutionStatus.ROLLED_BACK.value},
+    SandboxExecutionStatus.ROLLING_BACK.value: {
+        SandboxExecutionStatus.ROLLED_BACK.value,
+        SandboxExecutionStatus.ROLLBACK_REQUIRED.value,
+    },
 }
 
 

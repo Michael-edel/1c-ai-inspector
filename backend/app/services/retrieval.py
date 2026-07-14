@@ -90,7 +90,7 @@ def _module_defining_method(output: Any, method: str) -> str | None:
     if not isinstance(content, list):
         return None
     declaration = re.compile(
-        rf"^\s*(?:Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        rf"^[ \t]*(?:Процедура|Функция)[ \t]+{re.escape(method)}[ \t]*\(",
         re.IGNORECASE | re.MULTILINE,
     )
     modules: set[str] = set()
@@ -114,7 +114,7 @@ def _compact_read_source_output(output: Any, method: str) -> Any:
     if not isinstance(content, list):
         return output
     declaration = re.compile(
-        rf"^\s*(?P<kind>Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        rf"^[ \t]*(?P<kind>Процедура|Функция)[ \t]+{re.escape(method)}[ \t]*\(",
         re.IGNORECASE | re.MULTILINE,
     )
     compacted: list[Any] = []
@@ -134,13 +134,13 @@ def _compact_read_source_output(output: Any, method: str) -> Any:
             continue
         terminator_name = "КонецПроцедуры" if match.group("kind").casefold() == "процедура" else "КонецФункции"
         terminator = re.compile(
-            rf"^\s*{terminator_name}\s*;?\s*$",
+            rf"^[ \t]*{terminator_name}[ \t]*;?[ \t]*\r?$",
             re.IGNORECASE | re.MULTILINE,
         ).search(source, match.start())
         if terminator is None:
             continue
         line_start = source.count("\n", 0, match.start()) + 1
-        line_end = source.count("\n", 0, terminator.end()) + 1
+        line_end = source.count("\n", 0, terminator.start()) + 1
         snippet = source[match.start():terminator.end()]
         scoped_source = "\n" * (line_start - 1) + snippet
         scoped_payload = {

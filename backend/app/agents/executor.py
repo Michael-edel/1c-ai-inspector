@@ -36,19 +36,33 @@ MODULE_ALIASES = {
 def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
     has_search_context = False
     for item in extra_context or []:
-        if item.get("tool") not in {"search_code", "read_source"}:
+        tool = item.get("tool")
+        if tool not in {"search_code", "read_source"}:
             continue
         data = item.get("data")
         if not isinstance(data, dict):
             continue
         if data.get("sourceComplete") is True:
             return "full"
-        content = data.get("content")
-        if isinstance(content, list) and any(
-            isinstance(block, dict) and isinstance(block.get("text"), str) and block["text"].strip()
-            for block in content
-        ):
+        if tool == "read_source" and isinstance(data.get("source"), str) and data["source"].strip():
             has_search_context = True
+        content = data.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                continue
+            text = block["text"]
+            if tool == "search_code" and re.search(r"^###[ \t]+\S", text, re.MULTILINE):
+                has_search_context = True
+                continue
+            if tool == "read_source":
+                try:
+                    payload = json.loads(text)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(payload, dict) and isinstance(payload.get("source"), str) and payload["source"].strip():
+                    has_search_context = True
     return "partial" if has_search_context else "none"
 
 
@@ -86,7 +100,7 @@ def _source_line_limits(extra_context: list[dict[str, object]] | None) -> dict[s
 
 def _source_contains_method(documents: dict[str, str], method: str) -> bool:
     declaration = re.compile(
-        rf"^\s*(?:Процедура|Функция)\s+{re.escape(method)}\s*\(",
+        rf"^[ \t]*(?:Процедура|Функция)[ \t]+{re.escape(method)}[ \t]*\(",
         re.IGNORECASE | re.MULTILINE,
     )
     return any(declaration.search(source) is not None for source in documents.values())

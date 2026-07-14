@@ -279,6 +279,46 @@ def test_method_answer_cannot_complete_without_full_source() -> None:
     assert report.model_usage.output_tokens == 0
 
 
+def test_empty_search_result_has_no_source_coverage() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_method_not_found",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "Объясни процедуру БонуснаяСистема"}, ensure_ascii=False),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_code_assistant"),
+            get_settings(),
+            UnexpectedAdapter(),
+            extra_context=[{
+                "source": "MCP",
+                "tool": "search_code",
+                "data": {
+                    "content": [{
+                        "type": "text",
+                        "text": "Поиск завершен: 0 совпадений.\nНичего не найдено.",
+                    }]
+                },
+            }],
+        )
+
+    assert report.status == "failed"
+    assert report.source_coverage == "none"
+    assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
+    assert report.model_usage.input_tokens == 0
+    assert any("MCP не вернул" in item for item in report.limitations)
+
+
 def test_module_audit_marks_complete_source_context() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

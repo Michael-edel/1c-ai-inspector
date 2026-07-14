@@ -472,9 +472,43 @@ def test_read_source_context_keeps_only_complete_requested_method() -> None:
     assert compacted["sourceScope"] == "method"
     assert payload["sourceLineStart"] == 101
     assert payload["sourceLineEnd"] == 103
+    assert len(payload["source"].splitlines()) == payload["sourceLineEnd"]
     assert payload["source"].splitlines()[100] == "Процедура РассчитатьСебестоимость()"
     assert "Результат = 42;" in payload["source"]
     assert "ДругойКод" not in payload["source"]
+
+
+def test_read_source_method_lines_are_exact_for_crlf_source() -> None:
+    source = (
+        "Префикс = 1;\r\n" * 7
+        + "\tПроцедура РассчитатьСкидку()\r\n"
+        + "\tРезультат = 42;\r\n"
+        + "\tКонецПроцедуры;\r\n"
+        + "Хвост = 2;\r\n"
+    )
+    output = {
+        "sourceComplete": True,
+        "content": [{
+            "type": "text",
+            "text": json.dumps({
+                "module": "ОбщийМодуль.СкидкиНаценкиСервер.Модуль",
+                "source": source,
+            }, ensure_ascii=False),
+        }],
+    }
+
+    compacted = _compact_read_source_output(output, "РассчитатьСкидку")
+    payload = json.loads(compacted["content"][0]["text"])
+
+    assert payload["sourceLineStart"] == 8
+    assert payload["sourceLineEnd"] == 10
+    assert len(payload["source"].splitlines()) == 10
+    assert payload["source"].splitlines()[7:] == [
+        "\tПроцедура РассчитатьСкидку()",
+        "\tРезультат = 42;",
+        "\tКонецПроцедуры;",
+    ]
+    assert "Хвост" not in payload["source"]
 
 
 def test_large_module_is_compacted_before_character_limit(tmp_path: Path) -> None:

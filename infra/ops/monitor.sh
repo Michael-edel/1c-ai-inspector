@@ -69,9 +69,9 @@ if traffic.get("accountedBytes", 0) > traffic.get("hardLimitBytes", 0) or traffi
 if costs.get("currency") != "KZT" or costs.get("estimatedCostKzt", -1) < 0 or costs.get("usdKztRate", 0) <= 0:
     raise SystemExit("Production model cost accounting is invalid")
 pricing = costs.get("pricing", {})
-if (pricing.get("inputPer1M"), pricing.get("cachedInputPer1M"), pricing.get("outputPer1M")) != (5, 0.5, 30):
-    raise SystemExit("Production GPT-5.5 pricing does not match the configured public tariff")
-if cost_estimate.get("currency") != "KZT" or cost_estimate.get("estimateType") != "upper-bound" or cost_estimate.get("estimatedCostKzt", 0) <= 0:
+if (pricing.get("model"), pricing.get("inputPer1M"), pricing.get("cachedInputPer1M"), pricing.get("outputPer1M")) != ("gpt-5.6-luna", 1, 0.1, 6):
+    raise SystemExit("Production GPT-5.6 Luna pricing does not match the configured public tariff")
+if cost_estimate.get("model") != "gpt-5.6-luna" or cost_estimate.get("currency") != "KZT" or cost_estimate.get("estimateType") != "upper-bound" or cost_estimate.get("estimatedCostKzt", 0) <= 0:
     raise SystemExit("Production preflight cost confirmation estimate is invalid")
 if len(projects) < 1:
     raise SystemExit("No synchronized projects are available")

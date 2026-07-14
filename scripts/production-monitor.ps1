@@ -59,11 +59,11 @@ $costs = Invoke-RestMethod -Uri "$base/api/v1/system/costs"
 if ($costs.currency -ne "KZT" -or $costs.estimatedCostKzt -lt 0 -or $costs.usdKztRate -le 0) {
     throw "Production model cost accounting is invalid"
 }
-if ($costs.pricing.inputPer1M -ne 5 -or $costs.pricing.cachedInputPer1M -ne 0.5 -or $costs.pricing.outputPer1M -ne 30) {
-    throw "Production GPT-5.5 pricing does not match the configured public tariff"
+if ($costs.pricing.model -ne "gpt-5.6-luna" -or $costs.pricing.inputPer1M -ne 1 -or $costs.pricing.cachedInputPer1M -ne 0.1 -or $costs.pricing.outputPer1M -ne 6) {
+    throw "Production GPT-5.6 Luna pricing does not match the configured public tariff"
 }
 $costEstimate = Invoke-RestMethod -Uri "$base/api/v1/system/cost-estimate"
-if ($costEstimate.currency -ne "KZT" -or $costEstimate.estimateType -ne "upper-bound" -or $costEstimate.estimatedCostKzt -le 0) {
+if ($costEstimate.model -ne "gpt-5.6-luna" -or $costEstimate.currency -ne "KZT" -or $costEstimate.estimateType -ne "upper-bound" -or $costEstimate.estimatedCostKzt -le 0) {
     throw "Production preflight cost confirmation estimate is invalid"
 }
 

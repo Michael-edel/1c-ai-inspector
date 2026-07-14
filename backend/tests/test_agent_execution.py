@@ -191,7 +191,7 @@ def test_agent_execution_persists_model_usage() -> None:
         assert usage.cached_input_tokens == 0
         assert usage.model == get_settings().model_name
         assert usage.duration_ms >= 0
-        assert usage.pricing_source == "openai-public:gpt-5.5:2026-07-14"
+        assert usage.pricing_source == "openai-public:gpt-5.6-luna:2026-07-14"
         assert usage.estimated_cost > 0
         assert usage.estimated_cost_kzt > 0
         assert usage.usd_kzt_rate == get_settings().usd_kzt_rate

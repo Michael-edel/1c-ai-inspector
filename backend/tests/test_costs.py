@@ -61,6 +61,33 @@ def test_official_gpt55_pricing_and_kzt_upper_bound() -> None:
     )
 
 
+def test_official_gpt56_luna_pricing_and_kzt_upper_bound() -> None:
+    settings = SimpleNamespace(
+        model_name="gpt-5.6-luna",
+        model_input_cost_per_1k=None,
+        model_cached_input_cost_per_1k=None,
+        model_output_cost_per_1k=None,
+        max_context_chars=120_000,
+        model_input_token_estimate_chars=3,
+        model_prompt_overhead_tokens=4_000,
+        model_max_output_tokens=16_384,
+        usd_kzt_rate=464.71,
+        usd_kzt_rate_date="2026-07-14",
+        usd_kzt_rate_source="nationalbank.kz",
+    )
+
+    pricing = resolve_model_pricing(settings)  # type: ignore[arg-type]
+    estimate = model_request_cost_estimate(settings)  # type: ignore[arg-type]
+
+    assert pricing.input_cost_per_1k == 0.001
+    assert pricing.cached_input_cost_per_1k == 0.0001
+    assert pricing.output_cost_per_1k == 0.006
+    assert pricing.source == "openai-public:gpt-5.6-luna:2026-07-14"
+    assert estimate["inputTokens"] == 44_000
+    assert estimate["estimatedCostUsd"] == 0.142304
+    assert estimate["estimatedCostKzt"] == 66.1301
+
+
 def test_incomplete_environment_pricing_is_rejected() -> None:
     settings = SimpleNamespace(
         model_name="gpt-5.5",

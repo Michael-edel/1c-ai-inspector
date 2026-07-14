@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     mcp_patch_search_tool: str = "search_code"
     mcp_patch_search_argument: str = "query"
     model_provider: str = "openai"
-    model_name: str = "gpt-5.5"
+    model_name: str = "gpt-5.6-luna"
     model_api_key: str = Field(min_length=1)
     model_api_url: AnyHttpUrl = "https://api.openai.com/v1"
     model_input_cost_per_1k: float | None = Field(default=None, ge=0)

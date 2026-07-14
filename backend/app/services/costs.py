@@ -19,6 +19,13 @@ class ModelPricing:
 
 
 OFFICIAL_MODEL_PRICING = {
+    "gpt-5.6-luna": ModelPricing(
+        model="gpt-5.6-luna",
+        input_cost_per_1k=0.001,
+        cached_input_cost_per_1k=0.0001,
+        output_cost_per_1k=0.006,
+        source="openai-public:gpt-5.6-luna:2026-07-14",
+    ),
     "gpt-5.5": ModelPricing(
         model="gpt-5.5",
         input_cost_per_1k=0.005,
@@ -45,10 +52,14 @@ def resolve_model_pricing(settings: Settings) -> ModelPricing:
             output_cost_per_1k=float(overrides[2]),
             source="environment",
         )
-    model_key = (
-        "gpt-5.5"
-        if settings.model_name == "gpt-5.5" or settings.model_name.startswith("gpt-5.5-")
-        else settings.model_name
+    model_key = next(
+        (
+            known_model
+            for known_model in OFFICIAL_MODEL_PRICING
+            if settings.model_name == known_model
+            or settings.model_name.startswith(f"{known_model}-")
+        ),
+        settings.model_name,
     )
     try:
         return OFFICIAL_MODEL_PRICING[model_key]

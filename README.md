@@ -259,7 +259,7 @@ MCP connector также принимает deadline родительской з
 При повторном discovery отсутствующие на MCP инструменты получают статус `retired` в `normalized_tools`, поэтому старые capabilities не остаются активными в базе.
 
 Model adapter принимает JSON string, content blocks и JSON в markdown fence, после чего всё равно валидирует ответ как `StructuredReport`. Для аудита он сохраняет только SHA-256 `responseChecksum` ответа модели в `model_usage`; содержимое ответа в audit не записывается.
-Model adapter использует оставшееся время общего task deadline и не отправляет запрос при уже истёкшем deadline.
+Model adapter использует оставшееся время общего task deadline и не отправляет запрос при уже истёкшем deadline. `MODEL_RETRIES` ограничивает повторы модели от `0` до `3`: повторяются только timeout, transport и transient HTTP `408/409/425/429/5xx`; невалидный JSON и невалидный StructuredReport не повторяются.
 Для моделей GPT-5 адаптер не передаёт `temperature=0`, потому что эти модели принимают только значение по умолчанию; для остальных OpenAI-compatible моделей сохраняется детерминированный `temperature=0`.
 Agent prompt получает фактическую JSON Schema `StructuredReport`, но итоговый ответ всё равно проверяется сервером перед сохранением task и findings.
 Telemetry в `StructuredReport` не доверяет значениям модели: model usage берётся из adapter, а tool usage — из фактически записанных retrieval calls и их длительности.

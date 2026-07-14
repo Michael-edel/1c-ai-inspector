@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     model_api_url: AnyHttpUrl = "https://api.openai.com/v1"
     model_input_cost_per_1k: float = Field(default=0, ge=0)
     model_output_cost_per_1k: float = Field(default=0, ge=0)
+    model_retries: int = Field(default=1, ge=0, le=3)
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_result_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)
     max_context_chars: int = Field(default=120_000, ge=1_000, le=2_000_000)

@@ -79,3 +79,11 @@ def test_execution_limits_have_safe_defaults_and_reject_zero() -> None:
         make_settings(max_findings=0)
     with pytest.raises(ValidationError):
         make_settings(max_methods_read=0)
+
+
+def test_model_retries_have_a_bounded_default() -> None:
+    settings = make_settings()
+
+    assert settings.model_retries == 1
+    with pytest.raises(ValidationError):
+        make_settings(model_retries=4)

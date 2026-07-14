@@ -25,6 +25,14 @@ class ModelAdapter(Protocol):
 class ModelError(RuntimeError):
     """Raised when the configured model cannot produce a usable response."""
 
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+class _RetryableModelError(ModelError):
+    """Raised for model failures that are safe to retry."""
+
 
 class ModelTimeoutError(ModelError):
     """Raised when the model reaches the parent task deadline."""
@@ -42,6 +50,19 @@ class OpenAICompatibleAdapter:
         self.deadline = deadline
 
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
+        for attempt in range(self.settings.model_retries + 1):
+            try:
+                return self._complete_once(messages)
+            except ModelTimeoutError:
+                raise
+            except _RetryableModelError as exc:
+                if attempt >= self.settings.model_retries:
+                    raise ModelError(exc.code) from exc
+                if self.deadline is not None and time.monotonic() >= self.deadline:
+                    raise ModelTimeoutError("TASK_TIMEOUT") from exc
+        raise ModelError("MODEL_REQUEST_FAILED")
+
+    def _complete_once(self, messages: list[dict[str, str]]) -> ModelResult:
         url = f"{str(self.settings.model_api_url).rstrip('/')}/chat/completions"
         try:
             payload = {
@@ -72,8 +93,15 @@ class OpenAICompatibleAdapter:
         except httpx.TimeoutException as exc:
             if self.deadline is not None and deadline_limited:
                 raise ModelTimeoutError("TASK_TIMEOUT") from exc
+            raise _RetryableModelError("MODEL_REQUEST_FAILED") from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code in {408, 409, 425, 429} or status_code >= 500:
+                raise _RetryableModelError("MODEL_REQUEST_FAILED") from exc
             raise ModelError("MODEL_REQUEST_FAILED") from exc
-        except (httpx.HTTPError, ValueError) as exc:
+        except httpx.HTTPError as exc:
+            raise _RetryableModelError("MODEL_REQUEST_FAILED") from exc
+        except ValueError as exc:
             raise ModelError("MODEL_REQUEST_FAILED") from exc
 
         try:

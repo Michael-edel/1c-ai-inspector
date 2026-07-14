@@ -18,6 +18,18 @@ Definition of Done для Patch Planner зафиксирован в `docs/BACKLO
 
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 
+`POST /api/v1/patch-proposals/{id}/checkpoint/git` требует Bearer identity и проверяет immutable Git checkpoint. Backend принимает только полный 40/64-символьный commit SHA, разрешает его в оператором смонтированном read-only repository и проверяет через `git cat-file`, что каждый BSL-путь существует в commit. `GIT_OPTIONAL_LOCKS=0`; branch, index и working tree не изменяются. UI-кнопка `CHECKPOINT` использует этот fail-closed endpoint. Старый логический endpoint сохранен только для API-совместимости.
+
+Backend image содержит только необходимый Git CLI; путь repository не принимается из HTTP-запроса и задается оператором через `PATCH_GIT_REPOSITORY`.
+
+Для локальной Git-проверки задайте `PATCH_GIT_HOST_PATH` и подключите отдельный read-only override:
+
+```powershell
+docker compose --env-file .env -f docker-compose.yml -f docker-compose.patch-git.yml up --build
+```
+
+`POST /api/v1/patch-proposals/{id}/revalidate/from-task` повторно получает Original из сохраненного `read_source` того же finding и сравнивает SHA-256 на backend. Исходный BSL не требуется возвращать браузеру для revalidation.
+
 `POST /api/v1/patch-proposals/{id}/approve` принимает `actor`, `role` и `note` только для checkpointed proposal; роль `maintainer` или `owner` обязательна. `POST /api/v1/patch-proposals/{id}/reject` фиксирует отказ для незавершенного proposal; доступна роль `reviewer`, `maintainer` или `owner`. Оба endpoint только сохраняют решение и возвращают `applied: false`; автоматического применения diff нет.
 
 `GET /api/v1/patch-proposals/{id}/events` возвращает append-only историю действий proposal. В UI Patch Planner можно создать proposal, просмотреть diff, запустить impact/checkpoint и зафиксировать approve/reject; отдельного действия `apply` интерфейс не предоставляет.

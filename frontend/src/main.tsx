@@ -99,6 +99,11 @@ const publicErrorMessages: Record<string, string> = {
   PATCH_TASK_NOT_COMPLETED: "Finding можно использовать только из завершенной задачи.",
   PATCH_SOURCE_NOT_AVAILABLE: "В задаче нет подтвержденного полного read-only исходника для этого finding.",
   PATCH_SOURCE_AMBIGUOUS: "Найдено несколько исходников для finding. Выполните новую точную проверку модуля.",
+  PATCH_TASK_SOURCE_NOT_LINKED: "Proposal не связан с сохраненным source finding.",
+  PATCH_GIT_REPOSITORY_NOT_CONFIGURED: "Оператор не настроил read-only Git repository для checkpoint.",
+  PATCH_GIT_REPOSITORY_UNAVAILABLE: "Read-only Git repository временно недоступен.",
+  PATCH_GIT_COMMIT_REQUIRED: "Для Git checkpoint укажите полный immutable commit SHA.",
+  PATCH_GIT_VERIFICATION_FAILED: "Git commit или BSL-путь не прошел read-only проверку.",
 };
 const sourceCoverageLabels: Record<string, string> = { full: "полный исходный модуль", partial: "частичные фрагменты", none: "исходный код не получен", unknown: "не определен" };
 const shortChecksum = (value: string) => `${value.slice(0, 16)}…`;
@@ -475,7 +480,6 @@ function App() {
           files: [{ path: patchPath.trim(), original: patchOriginal, proposed: patchProposed }],
         }),
       });
-      if (created.files[0]) setPatchOriginal(created.files[0].original);
       await loadPatch(created.id);
       setMessage(fromFinding ? "Proposal создан из сохраненного read-only source finding." : "Proposal создан. Изменения остаются только в preview.");
     } catch (reason) {
@@ -491,14 +495,21 @@ function App() {
     setError("");
     try {
       const options: RequestInit = { method: "POST" };
-      if (action === "revalidate") {
+      let endpointAction: string = action;
+      if (action === "revalidate" && patchFindingId) {
+        endpointAction = "revalidate/from-task";
+        options.headers = { Authorization: `Bearer ${authToken.trim()}` };
+      } else if (action === "revalidate") {
         options.headers = { "Content-Type": "application/json" };
         options.body = JSON.stringify({ currentRevision: patchProposal.sourceRevision, files: [{ path: patchPath, current: patchOriginal }] });
       } else if (action === "approve" || action === "reject") {
         options.headers = { "Content-Type": "application/json", Authorization: `Bearer ${authToken.trim()}` };
         options.body = JSON.stringify({ note: patchNote.trim() });
+      } else if (action === "checkpoint") {
+        endpointAction = "checkpoint/git";
+        options.headers = { Authorization: `Bearer ${authToken.trim()}` };
       }
-      await api(`/api/v1/patch-proposals/${patchProposal.id}/${action}`, options);
+      await api(`/api/v1/patch-proposals/${patchProposal.id}/${endpointAction}`, options);
       await loadPatch(patchProposal.id);
       setMessage(`Действие ${action} сохранено в журнале proposal.`);
     } catch (reason) {

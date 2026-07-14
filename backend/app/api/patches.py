@@ -42,6 +42,11 @@ from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.services.auth import AuthContext
 from app.services.patch_policy import PatchPolicyError, authorize_environment
 from app.services.patch_task_source import PatchTaskSourceError, resolve_task_source
+from app.services.patch_git_checkpoint import (
+    GitCheckpointError,
+    create_git_checkpoint_ref,
+    verify_git_checkpoint,
+)
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -326,6 +331,61 @@ def revalidate_patch_source(
     return {"proposalId": proposal.id, "status": proposal.source_validation_status, "validation": result}
 
 
+@router.post("/{proposal_id}/revalidate/from-task")
+def revalidate_patch_source_from_task(
+    proposal_id: str,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    source_event = db.scalar(
+        select(PatchEvent)
+        .where(
+            PatchEvent.proposal_id == proposal.id,
+            PatchEvent.event_type == "source_imported",
+        )
+        .order_by(PatchEvent.created_at.desc(), PatchEvent.id.desc())
+    )
+    if proposal.task_id is None or source_event is None:
+        raise HTTPException(status_code=409, detail="PATCH_TASK_SOURCE_NOT_LINKED")
+    provenance = json.loads(source_event.payload_json)
+    finding = db.get(Finding, provenance.get("findingId"))
+    if finding is None or finding.task_id != proposal.task_id:
+        raise HTTPException(status_code=409, detail="PATCH_TASK_SOURCE_NOT_LINKED")
+    calls = db.scalars(
+        select(ToolCall)
+        .where(ToolCall.task_id == proposal.task_id, ToolCall.tool_name == "read_source")
+        .order_by(ToolCall.created_at, ToolCall.id)
+    ).all()
+    try:
+        source = resolve_task_source(finding.object_fqn, finding.module, calls)
+    except PatchTaskSourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    files = json.loads(proposal.files_json)
+    if len(files) != 1:
+        raise HTTPException(status_code=409, detail="PATCH_TASK_SOURCE_FILE_COUNT_INVALID")
+    result = revalidate_source(
+        files,
+        [{"path": files[0]["path"], "current": source.source}],
+        proposal.source_revision,
+        source.revision or proposal.source_revision,
+    )
+    proposal.source_validation_status = "valid" if result["valid"] else "stale"
+    proposal.source_validation_json = json.dumps(result, ensure_ascii=False)
+    proposal.source_validated_at = datetime.now(timezone.utc)
+    record_patch_event(
+        db,
+        proposal.id,
+        "source_revalidated" if result["valid"] else "source_stale",
+        identity.subject,
+        {**result, "source": "persisted_read_source", "toolCallId": source.tool_call_id},
+    )
+    db.commit()
+    return {"proposalId": proposal.id, "status": proposal.source_validation_status, "validation": result}
+
+
 @router.post("/{proposal_id}/validate")
 def validate_patch(proposal_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     proposal = db.get(PatchProposal, proposal_id)
@@ -377,6 +437,59 @@ def checkpoint_patch_proposal(proposal_id: str, db: Session = Depends(get_db)) -
         "proposalId": proposal.id,
         "status": proposal.status,
         "checkpointRef": proposal.checkpoint_ref,
+        "applied": False,
+    }
+
+
+@router.post("/{proposal_id}/checkpoint/git")
+def checkpoint_patch_proposal_with_git(
+    proposal_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    if proposal.status not in {PatchStatus.PROPOSED.value, PatchStatus.CHECKPOINTED.value}:
+        raise HTTPException(status_code=409, detail="Patch proposal is not checkpointable")
+    if proposal.source_validation_status != "valid":
+        raise HTTPException(status_code=409, detail="PATCH_SOURCE_NOT_VALIDATED")
+    files = json.loads(proposal.files_json)
+    try:
+        checkpoint = verify_git_checkpoint(
+            request.app.state.settings.patch_git_repository,
+            proposal.source_revision,
+            [str(item.get("path", "")) for item in files],
+        )
+    except GitCheckpointError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    proposal.source_revision = checkpoint.commit_sha
+    proposal.checkpoint_ref = create_git_checkpoint_ref(
+        proposal.id,
+        checkpoint.commit_sha,
+        proposal.diff_text,
+    )
+    proposal.status = PatchStatus.CHECKPOINTED.value
+    record_patch_event(
+        db,
+        proposal.id,
+        "git_checkpointed",
+        identity.subject,
+        {
+            "commitSha": checkpoint.commit_sha,
+            "pathCount": len(checkpoint.paths),
+            "repositoryConfigured": True,
+            "applied": False,
+        },
+    )
+    db.commit()
+    return {
+        "proposalId": proposal.id,
+        "status": proposal.status,
+        "checkpointRef": proposal.checkpoint_ref,
+        "commitSha": checkpoint.commit_sha,
+        "paths": list(checkpoint.paths),
         "applied": False,
     }
 

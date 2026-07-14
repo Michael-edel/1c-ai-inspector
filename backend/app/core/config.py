@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     worker_lease_timeout_sec: int = Field(default=600, ge=5, le=86_400)
     mcp_policy_path: Path = Path("/app/mcp_policy.yaml")
     prompts_path: Path = Path("/app/prompts")
+    patch_git_repository: Path | None = None
     app_environment: str = "sandbox"
     inspector_auth_secret: str | None = Field(default=None, min_length=32)
     inspector_auth_secret_previous: str | None = Field(default=None, min_length=32)

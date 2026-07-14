@@ -1,0 +1,6 @@
+services:
+  backend:
+    environment:
+      PATCH_GIT_REPOSITORY: /patch-source
+    volumes:
+      - ${PATCH_GIT_HOST_PATH:?Set PATCH_GIT_HOST_PATH to the source repository}:/patch-source:ro

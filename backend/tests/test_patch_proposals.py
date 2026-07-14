@@ -1,4 +1,6 @@
 import pytest
+import shutil
+import subprocess
 from hashlib import sha256
 from io import BytesIO
 from zipfile import ZipFile
@@ -18,6 +20,11 @@ from app.services.patch_validation import validate_patch_proposal
 from app.services.auth import AuthError, issue_auth_token, verify_auth_token, verify_auth_token_with_rotation
 from app.services.patch_policy import PatchPolicyError, authorize_environment
 from app.services.patch_task_source import PatchTaskSourceError, resolve_task_source
+from app.services.patch_git_checkpoint import (
+    GitCheckpointError,
+    create_git_checkpoint_ref,
+    verify_git_checkpoint,
+)
 
 
 class StoredToolCall:
@@ -251,3 +258,50 @@ def test_task_source_rejects_non_read_only_and_ambiguous_evidence() -> None:
     )
     with pytest.raises(PatchTaskSourceError, match="PATCH_SOURCE_AMBIGUOUS"):
         resolve_task_source("Document.Order", "ObjectModule", [first, second])
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_git_checkpoint_verifies_full_commit_and_paths_without_changes(tmp_path) -> None:
+    source_path = tmp_path / "CommonModules" / "Orders.bsl"
+    source_path.parent.mkdir()
+    source_path.write_text("Procedure Check()\nEndProcedure\n", encoding="utf-8")
+    for arguments in (
+        ("init",),
+        ("config", "user.email", "inspector@example.test"),
+        ("config", "user.name", "Inspector Test"),
+        ("add", "CommonModules/Orders.bsl"),
+        ("commit", "-m", "source revision"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *arguments], check=True, capture_output=True)
+    commit_sha = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    before = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    checkpoint = verify_git_checkpoint(tmp_path, commit_sha, ["CommonModules/Orders.bsl"])
+    checkpoint_ref = create_git_checkpoint_ref("pp_git", checkpoint.commit_sha, "diff")
+
+    after = subprocess.run(
+        ["git", "-C", str(tmp_path), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert checkpoint.commit_sha == commit_sha
+    assert checkpoint_ref.startswith(f"git-checkpoint:pp_git:{commit_sha}:")
+    assert before == after == ""
+
+
+def test_git_checkpoint_fails_closed_without_repository_or_full_sha(tmp_path) -> None:
+    with pytest.raises(GitCheckpointError, match="PATCH_GIT_REPOSITORY_NOT_CONFIGURED"):
+        verify_git_checkpoint(None, "a" * 40, ["module.bsl"])
+    with pytest.raises(GitCheckpointError, match="PATCH_GIT_COMMIT_REQUIRED"):
+        verify_git_checkpoint(tmp_path, "HEAD", ["module.bsl"])

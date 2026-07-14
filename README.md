@@ -26,7 +26,7 @@ Approval transitions and first package-version creation lock the proposal row wi
 
 Каждый HTTP-запрос получает `X-Request-ID`; JSON logs содержат только method, path, status, duration и request id, без Authorization, body и query parameters. Aggregate metrics доступны через `GET /api/v1/system/metrics` с Bearer token.
 
-Матрица публичных ошибок и retry/state-поведения находится в `docs/ERROR_MATRIX.md`. Для production smoke используйте `.\scripts\error-contract-acceptance.ps1 -BaseUrl https://inspector.michael.kz -CompletedTaskId <completed-task-id>`; скрипт проверяет только безопасные 404/409/401-контракты и не изменяет завершённую задачу.
+Матрица публичных ошибок и retry/state-поведения находится в `docs/ERROR_MATRIX.md`; для каждого класса там указаны HTTP-поверхность, audit/state, повторный запуск и отсутствие диагностических деталей. Для production smoke используйте `.\scripts\error-contract-acceptance.ps1 -BaseUrl https://inspector.michael.kz -CompletedTaskId <completed-task-id>`; скрипт проверяет только безопасные 404/409/401-контракты и не изменяет завершённую задачу.
 
 `POST /api/v1/patch-proposals/{id}/validate` выполняет детерминированные validation-gates: source status, unified diff, SHA snapshot, количество измененных строк и допустимое расширение файла. Approval разрешен только после `sourceValidationStatus=valid` и `validationStatus=valid`.
 

@@ -18,7 +18,7 @@ Definition of Done для Patch Planner зафиксирован в `docs/BACKLO
 
 `POST /api/v1/patch-proposals/{id}/checkpoint` создает детерминированную логическую checkpoint-ссылку по revision и SHA-256 diff. Checkpoint не выполняет `git commit`, не создает ветку, не меняет workspace и не записывает изменения в 1С; в ответе `applied` всегда остается `false`.
 
-`POST /api/v1/patch-proposals/{id}/checkpoint/git` требует Bearer identity и проверяет immutable Git checkpoint. Backend принимает только полный 40/64-символьный commit SHA, разрешает его в оператором смонтированном read-only repository и проверяет через `git cat-file`, что каждый BSL-путь существует в commit. `GIT_OPTIONAL_LOCKS=0`; branch, index и working tree не изменяются. UI-кнопка `CHECKPOINT` использует этот fail-closed endpoint. Старый логический endpoint сохранен только для API-совместимости.
+`POST /api/v1/patch-proposals/{id}/checkpoint/git` требует Bearer identity и проверяет immutable Git checkpoint. Backend принимает только полный 40/64-символьный commit SHA, разрешает его в оператором смонтированном read-only repository и через `git cat-file blob` проверяет существование каждого BSL-пути и совпадение bytes с `originalSha256` proposal. `GIT_OPTIONAL_LOCKS=0`; branch, index и working tree не изменяются. UI-кнопка `CHECKPOINT` использует этот fail-closed endpoint. Старый логический endpoint сохранен только для API-совместимости.
 
 Backend image содержит только необходимый Git CLI; путь repository не принимается из HTTP-запроса и задается оператором через `PATCH_GIT_REPOSITORY`.
 
@@ -151,10 +151,15 @@ Live acceptance после настройки `.env` запускается ко
 Финальную приемку v0.2 Patch Planner запускайте при работающем Compose:
 
 ```powershell
-.\scripts\v02-acceptance.ps1
+.\scripts\v02-acceptance.ps1 `
+  -OwnerToken <owner-token> `
+  -TaskId <completed-task-id> `
+  -FindingId <persisted-finding-id> `
+  -GitCommit <full-commit-sha> `
+  -GitPath CommonModules/AcceptanceSmoke.bsl
 ```
 
-Скрипт создает временные proposal-only данные, проверяет candidate impact, логический checkpoint, approve/reject и журнал из событий. Он не применяет diff, не меняет workspace/Git и не записывает изменения в конфигурацию 1С.
+Backend должен быть запущен с `docker-compose.patch-git.yml`, а `GitPath` должен существовать в указанном commit. Скрипт проверяет полный контур `completed task/finding -> persisted read_source -> diff -> source revalidation -> Git checkpoint -> validation -> owner approval -> signed package -> manual handoff -> audit`. В конце он проверяет OpenAPI и отклоняет релиз, если появился `/apply`; Git, workspace и конфигурация 1С не изменяются.
 
 Финальную приемку v0.3 запускайте при работающем Compose:
 
@@ -196,9 +201,9 @@ Production deployment использует override `docker-compose.production.y
 
 Для локального production-like smoke, если 80/443 заняты, задайте временные `CADDY_HTTP_PORT` и `CADDY_HTTPS_PORT` и добавьте `docker-compose.edge.local.yml`; этот override использует `tls internal` для тестовых доменов. Production defaults остаются 80/443 и публичный ACME/TLS из `docker-compose.edge.production.yml`.
 
-Production PostgreSQL проходит Alembic migrations на чистой базе; `migrate` повторяет запуск до пяти раз при transient startup race. Compose-override закрывает базовый `5432`, а edge-override оставляет backend/frontend/Keycloak доступными только внутри сети.
+Production PostgreSQL проходит всю Alembic-цепочку на чистой базе; foundation revision явно откладывает поля, принадлежащие последующим column migrations, поэтому clean install не получает повторное `ADD COLUMN`. `migrate` повторяет запуск до пяти раз только при transient startup race. Compose-override закрывает базовый `5432`, а edge-override оставляет backend/frontend/Keycloak доступными только внутри сети.
 
-Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, отсутствие write tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
+Security/load smoke запускается командой `.\scripts\security-load-acceptance.ps1 -Count 20`. Он проверяет security headers, auth на metrics, наличие report-to-patch/Git/handoff маршрутов, отсутствие `/apply`, отсутствие `write` и `conditional-write` tools в policy, non-root backend и параллельные health requests. API отклоняет запросы больше `MAX_REQUEST_BYTES` с `413 REQUEST_TOO_LARGE`.
 
 Единый production acceptance запускается после создания трех завершенных read-only задач:
 

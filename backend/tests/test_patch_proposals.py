@@ -287,7 +287,16 @@ def test_git_checkpoint_verifies_full_commit_and_paths_without_changes(tmp_path)
         text=True,
     ).stdout
 
-    checkpoint = verify_git_checkpoint(tmp_path, commit_sha, ["CommonModules/Orders.bsl"])
+    blob = subprocess.run(
+        ["git", "-C", str(tmp_path), "show", f"{commit_sha}:CommonModules/Orders.bsl"],
+        check=True,
+        capture_output=True,
+    ).stdout
+    checkpoint = verify_git_checkpoint(
+        tmp_path,
+        commit_sha,
+        [{"path": "CommonModules/Orders.bsl", "originalSha256": sha256(blob).hexdigest()}],
+    )
     checkpoint_ref = create_git_checkpoint_ref("pp_git", checkpoint.commit_sha, "diff")
 
     after = subprocess.run(
@@ -303,9 +312,44 @@ def test_git_checkpoint_verifies_full_commit_and_paths_without_changes(tmp_path)
 
 def test_git_checkpoint_fails_closed_without_repository_or_full_sha(tmp_path) -> None:
     with pytest.raises(GitCheckpointError, match="PATCH_GIT_REPOSITORY_NOT_CONFIGURED"):
-        verify_git_checkpoint(None, "a" * 40, ["module.bsl"])
+        verify_git_checkpoint(
+            None,
+            "a" * 40,
+            [{"path": "module.bsl", "originalSha256": "0" * 64}],
+        )
     with pytest.raises(GitCheckpointError, match="PATCH_GIT_COMMIT_REQUIRED"):
-        verify_git_checkpoint(tmp_path, "HEAD", ["module.bsl"])
+        verify_git_checkpoint(
+            tmp_path,
+            "HEAD",
+            [{"path": "module.bsl", "originalSha256": "0" * 64}],
+        )
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_git_checkpoint_rejects_source_hash_mismatch(tmp_path) -> None:
+    source_path = tmp_path / "module.bsl"
+    source_path.write_bytes(b"A\n")
+    for arguments in (
+        ("init",),
+        ("config", "user.email", "inspector@example.test"),
+        ("config", "user.name", "Inspector Test"),
+        ("add", "module.bsl"),
+        ("commit", "-m", "source revision"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *arguments], check=True, capture_output=True)
+    commit_sha = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    with pytest.raises(GitCheckpointError, match="PATCH_GIT_SOURCE_MISMATCH"):
+        verify_git_checkpoint(
+            tmp_path,
+            commit_sha,
+            [{"path": "module.bsl", "originalSha256": sha256(b"B\n").hexdigest()}],
+        )
 
 
 def test_manual_handoff_requires_approved_signed_matching_package() -> None:

@@ -25,11 +25,24 @@ FOUNDATION_TABLES = (
     "prompt_execution_snapshots",
 )
 
+# Base.metadata reflects the current application model. Keep the foundation
+# revision historical so later column migrations remain valid on a clean DB.
+DEFERRED_COLUMNS = (
+    ("tasks", "cancel_requested"),
+    ("tool_calls", "result_size_chars"),
+    ("model_usage", "response_checksum"),
+    ("model_usage", "cached_input_tokens"),
+    ("model_usage", "pricing_source"),
+    ("model_usage", "duration_ms"),
+)
+
 
 def upgrade() -> None:
     bind = op.get_bind()
     tables = [Base.metadata.tables[name] for name in FOUNDATION_TABLES]
     Base.metadata.create_all(bind=bind, tables=tables)
+    for table_name, column_name in DEFERRED_COLUMNS:
+        op.drop_column(table_name, column_name)
     runtime_role = os.environ.get("RUNTIME_DB_USER", "inspector_runtime")
     quoted_role = '"' + runtime_role.replace('"', '""') + '"'
     op.execute(f"GRANT USAGE ON SCHEMA public TO {quoted_role}")

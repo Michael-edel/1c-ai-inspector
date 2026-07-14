@@ -22,7 +22,20 @@ try {
 if ($metricsSucceeded) { throw "Unauthenticated metrics request unexpectedly succeeded" }
 
 $policy = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "..\mcp_policy.yaml")
-if ($policy -match "(?im)^\s*mode:\s*write\s*$") { throw "Write tool found in published policy" }
+if ($policy -match "(?im)^\s*mode:\s*(write|conditional-write)\s*$") {
+    throw "Write-capable tool found in published policy"
+}
+$openApi = Invoke-RestMethod -Uri "$BaseUrl/openapi.json"
+$paths = @($openApi.paths.PSObject.Properties.Name)
+foreach ($requiredPath in @(
+    "/api/v1/patch-proposals/from-finding",
+    "/api/v1/patch-proposals/{proposal_id}/revalidate/from-task",
+    "/api/v1/patch-proposals/{proposal_id}/checkpoint/git",
+    "/api/v1/patch-proposals/{proposal_id}/handoff"
+)) {
+    if ($paths -notcontains $requiredPath) { throw "Missing Patch Planner route: $requiredPath" }
+}
+if ($paths -match "/apply(?:/|$)") { throw "Apply endpoint must not exist in proposal-only release" }
 $dockerfile = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "..\backend\Dockerfile")
 if ($dockerfile -notmatch "USER app") {
     throw "Backend container is not configured for non-root execution"
@@ -40,4 +53,4 @@ foreach ($process in $processes) {
         throw "Concurrent health request failed"
     }
 }
-Write-Output "Security/load acceptance passed: headers, metrics auth, read-only policy, non-root backend and $Count concurrent health requests verified."
+Write-Output "Security/load acceptance passed: headers, metrics auth, Patch Planner no-apply routes, read-only policy, non-root backend and $Count concurrent health requests verified."

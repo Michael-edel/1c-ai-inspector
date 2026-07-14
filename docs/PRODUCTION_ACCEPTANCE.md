@@ -47,3 +47,20 @@ Commands used:
 bash infra/ops/backup-postgres.sh
 bash infra/ops/restore-drill.sh
 ```
+
+## Patch Planner v0.2 release gate
+
+Release scope commits: `1b22b6c` through `d56e41c`, plus the acceptance/documentation commit that contains this section.
+
+Required evidence before and after deployment:
+
+- full backend suite and frontend production build pass;
+- a fresh PostgreSQL volume completes the full Alembic chain without duplicate-column errors;
+- `scripts/v02-acceptance.ps1` passes against a backend with an operator-mounted read-only Git repository;
+- Git working tree status is unchanged by checkpoint verification;
+- production OpenAPI contains `from-finding`, `revalidate/from-task`, `checkpoint/git` and `handoff`;
+- production OpenAPI contains no `/apply` route;
+- production policy contains no `write` or `conditional-write` tools;
+- production monitor, three-agent UAT and 20-request security/load smoke remain green.
+
+The production instance does not claim a successful Git checkpoint unless `PATCH_GIT_REPOSITORY` is mounted. Without that mount, the endpoint must return `PATCH_GIT_REPOSITORY_NOT_CONFIGURED`; this is the intended fail-closed behavior, not an applied patch.

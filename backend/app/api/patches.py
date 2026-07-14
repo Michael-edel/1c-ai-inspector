@@ -470,7 +470,13 @@ def checkpoint_patch_proposal_with_git(
         checkpoint = verify_git_checkpoint(
             request.app.state.settings.patch_git_repository,
             proposal.source_revision,
-            [str(item.get("path", "")) for item in files],
+            [
+                {
+                    "path": str(item.get("path", "")),
+                    "originalSha256": str(item.get("originalSha256", "")),
+                }
+                for item in files
+            ],
         )
     except GitCheckpointError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

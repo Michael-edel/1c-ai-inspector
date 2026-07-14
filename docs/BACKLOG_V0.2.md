@@ -4,6 +4,8 @@
 
 Цель релиза: на основании сохраненного read-only отчета и исходного BSL-кода подготовить проверяемое предложение изменения, связать его с неизменяемой Git revision, провести impact analysis и передать подписанный пакет оператору для ручного применения.
 
+Статус реализации: все пункты Definition of Done покрыты backend tests, frontend build и `scripts/v02-acceptance.ps1`. Production release дополнительно обязан пройти `scripts/final-production-acceptance.ps1`; без read-only Git mount production сохраняет fail-closed режим для Git checkpoint.
+
 ## Definition of Done
 
 Релиз v0.2 считается готовым, если пользователь может:

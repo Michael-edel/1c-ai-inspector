@@ -104,6 +104,7 @@ const publicErrorMessages: Record<string, string> = {
   PATCH_GIT_REPOSITORY_UNAVAILABLE: "Read-only Git repository временно недоступен.",
   PATCH_GIT_COMMIT_REQUIRED: "Для Git checkpoint укажите полный immutable commit SHA.",
   PATCH_GIT_VERIFICATION_FAILED: "Git commit или BSL-путь не прошел read-only проверку.",
+  PATCH_GIT_SOURCE_MISMATCH: "Original source не совпадает с BSL blob выбранного Git commit.",
   PATCH_PACKAGE_REQUIRES_APPROVAL: "Signed package можно создать только после approval.",
   PATCH_HANDOFF_ROLE_REQUIRED: "Ручной handoff доступен только maintainer или owner.",
   PATCH_HANDOFF_REQUIRES_APPROVAL: "Ручной handoff доступен только для approved proposal.",

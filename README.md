@@ -12,6 +12,8 @@ Definition of Done для Sandbox Executor зафиксирован в `docs/BAC
 
 Первый срез v0.3 добавляет только feature-flagged API и persistence: `POST /api/v1/sandbox-executions` проверяет owner role, approved proposal, immutable package version, SHA-256, HMAC signature и Git checkpoint, после чего сохраняет execution в `created` и append-only событие. При выключенном `SANDBOX_EXECUTOR_ENABLED` router отсутствует в OpenAPI. На этом срезе worktree ещё не создаётся и diff не применяется.
 
+`POST /api/v1/sandbox-executions/{id}/prepare` создает уникальную ветку `inspector/<execution-id>` и одноразовый Git worktree от полного immutable commit. Repository/root берутся только из server settings, ветка и путь вычисляются из execution ID, а частично созданный worktree удаляется при ошибке. Для локального запуска задайте `SANDBOX_SOURCE_HOST_PATH` и `SANDBOX_ROOT_HOST_PATH`, затем добавьте `-f docker-compose.sandbox.yml`; используйте только отдельный disposable repository, не рабочий проект и не `InfoBase1`.
+
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
 `POST /api/v1/patch-proposals/from-finding` создает proposal из завершенной задачи и сохраненного finding. Endpoint требует Bearer identity, берет Original только из соответствующего успешного `read-only` вызова `read_source`, отклоняет отсутствующий или неоднозначный source и фиксирует `taskId`, `findingId`, `toolCallId` и модуль в событии `source_imported`. В UI после загрузки отчета можно выбрать finding; введенное вручную поле Original в этом режиме backend не использует.

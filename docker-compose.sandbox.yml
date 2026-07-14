@@ -1,0 +1,9 @@
+services:
+  backend:
+    environment:
+      SANDBOX_EXECUTOR_ENABLED: "true"
+      SANDBOX_SOURCE_REPOSITORY: /sandbox-source
+      SANDBOX_ROOT: /sandboxes
+    volumes:
+      - ${SANDBOX_SOURCE_HOST_PATH:?Set SANDBOX_SOURCE_HOST_PATH to a disposable Git repository}:/sandbox-source
+      - ${SANDBOX_ROOT_HOST_PATH:?Set SANDBOX_ROOT_HOST_PATH to an empty sandbox directory}:/sandboxes

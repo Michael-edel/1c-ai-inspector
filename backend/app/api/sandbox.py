@@ -19,6 +19,8 @@ from app.models import (
 from app.services.auth import AuthContext
 from app.services.sandbox_audit import record_sandbox_event
 from app.services.sandbox_workflow import SandboxWorkflowError, validate_execution_request
+from app.services.sandbox_git import SandboxGitError, prepare_sandbox_worktree
+from app.services.sandbox_workflow import transition_sandbox_status
 
 router = APIRouter(prefix="/api/v1/sandbox-executions", tags=["sandbox-executions"])
 
@@ -105,6 +107,57 @@ def list_sandbox_executions(
         .limit(limit)
     ).all()
     return [_execution_response(row) for row in rows]
+
+
+@router.post("/{execution_id}/prepare")
+def prepare_sandbox_execution(
+    execution_id: str,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if identity.role != "owner":
+        raise HTTPException(status_code=403, detail="SANDBOX_OWNER_REQUIRED")
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    try:
+        execution.status = transition_sandbox_status(execution.status, "preparing")
+    except SandboxWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record_sandbox_event(db, execution.id, "sandbox_preparing", identity.subject)
+    db.commit()
+    try:
+        prepared = prepare_sandbox_worktree(
+            request.app.state.settings.sandbox_source_repository,
+            request.app.state.settings.sandbox_root,
+            execution.id,
+            execution.source_commit,
+        )
+    except SandboxGitError as exc:
+        execution.status = transition_sandbox_status(execution.status, "failed")
+        execution.last_error_code = str(exc)
+        record_sandbox_event(
+            db,
+            execution.id,
+            "sandbox_prepare_failed",
+            identity.subject,
+            {"errorCode": str(exc)},
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution.branch_name = prepared.branch_name
+    execution.worktree_path = str(prepared.worktree_path)
+    execution.status = transition_sandbox_status(execution.status, "prepared")
+    record_sandbox_event(
+        db,
+        execution.id,
+        "sandbox_prepared",
+        identity.subject,
+        {"branchName": prepared.branch_name, "sourceCommit": prepared.commit_sha},
+    )
+    db.commit()
+    return _execution_response(execution)
 
 
 @router.get("/{execution_id}")

@@ -193,7 +193,7 @@ Security/load smoke запускается командой `.\scripts\security-
   -LoadCount 20
 ```
 
-После backup выполните на VPS `bash infra/ops/restore-drill.sh`. Скрипт берет свежие dump-файлы application PostgreSQL и Keycloak, восстанавливает их в одноразовые контейнеры `postgres:16-alpine` и удаляет контейнеры после проверки; рабочие базы и сервисы не изменяются. Максимальный возраст dump задается `MAX_AGE_HOURS` (по умолчанию 48).
+После backup выполните на VPS `bash infra/ops/restore-drill.sh`. Скрипт берет свежие dump-файлы application PostgreSQL и Keycloak, восстанавливает их в одноразовые контейнеры `postgres:16-alpine` и удаляет контейнеры после проверки; рабочие базы и сервисы не изменяются. Максимальный возраст dump задается `MAX_AGE_HOURS` (по умолчанию 48). Последний подтверждённый restore drill и production UAT зафиксированы в [`docs/PRODUCTION_ACCEPTANCE.md`](docs/PRODUCTION_ACCEPTANCE.md).
 
 Единый production release acceptance текущего контура запускается после создания трех завершенных read-only задач:
 

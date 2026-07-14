@@ -1,6 +1,7 @@
 import json
 import hashlib
 import re
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -240,6 +241,7 @@ def execute_agent(
             ),
         },
     ]
+    model_started = perf_counter()
     try:
         result = adapter.complete(messages)
         report = StructuredReport.model_validate_json(result.content)
@@ -247,6 +249,7 @@ def execute_agent(
         raise AgentExecutionError(str(exc)) from exc
     except (ValueError, TypeError) as exc:
         raise AgentExecutionError("MODEL_REPORT_INVALID") from exc
+    model_duration_ms = int((perf_counter() - model_started) * 1000)
 
     if len(report.findings) > settings.max_findings:
         raise AgentExecutionError("FINDINGS_LIMIT_EXCEEDED")
@@ -278,9 +281,11 @@ def execute_agent(
                 duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),
             ),
             "model_usage": ModelUsage(
+                model=settings.model_name,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 cached_input_tokens=result.cached_input_tokens,
+                duration_ms=model_duration_ms,
                 estimated_cost=estimate_cost(
                     result.input_tokens,
                     result.output_tokens,
@@ -301,5 +306,6 @@ def execute_agent(
         response_checksum=result.response_checksum or hashlib.sha256(result.content.encode("utf-8")).hexdigest(),
         cached_input_tokens=result.cached_input_tokens,
         pricing_source="environment",
+        duration_ms=model_duration_ms,
     )
     return report

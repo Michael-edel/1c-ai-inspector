@@ -45,9 +45,11 @@ class ToolUsage(BaseModel):
 
 
 class ModelUsage(BaseModel):
+    model: str = Field(default="unknown", min_length=1)
     input_tokens: int = Field(alias="inputTokens", ge=0)
     output_tokens: int = Field(alias="outputTokens", ge=0)
     cached_input_tokens: int = Field(default=0, alias="cachedInputTokens", ge=0)
+    duration_ms: int = Field(default=0, alias="durationMs", ge=0)
     estimated_cost: float = Field(alias="estimatedCost", ge=0)
     pricing_source: str = Field(default="environment", alias="pricingSource", min_length=1)
 

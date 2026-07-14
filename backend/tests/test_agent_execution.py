@@ -38,6 +38,11 @@ class SchemaCheckingAdapter(FakeAdapter):
         return super().complete(messages)
 
 
+class UnexpectedAdapter(FakeAdapter):
+    def complete(self, messages: list[dict[str, str]]) -> ModelResult:
+        raise AssertionError("model must not be called without verified source")
+
+
 class TooManyFindingsAdapter(FakeAdapter):
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         report = json.loads(super().complete(messages).content)
@@ -219,7 +224,7 @@ def test_module_audit_marks_partial_source_context() -> None:
             task,
             AgentRegistry().get("1c_audit_agent"),
             get_settings(),
-            FakeAdapter(),
+            UnexpectedAdapter(),
             extra_context=[
                 {
                     "source": "MCP",
@@ -262,13 +267,16 @@ def test_method_answer_cannot_complete_without_full_source() -> None:
             task,
             AgentRegistry().get("1c_code_assistant"),
             get_settings(),
-            FakeAdapter(),
+            UnexpectedAdapter(),
             extra_context=[{"source": "MCP", "tool": "search_code", "data": {"content": []}}],
         )
+        assert session.scalars(select(ModelUsage).where(ModelUsage.task_id == task.id)).all() == []
 
     assert report.status == "failed"
     assert report.findings == []
     assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
+    assert report.model_usage.input_tokens == 0
+    assert report.model_usage.output_tokens == 0
 
 
 def test_module_audit_marks_complete_source_context() -> None:

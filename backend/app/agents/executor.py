@@ -10,6 +10,7 @@ from app.agents.registry import AgentDefinition
 from app.core.config import Settings
 from app.models import Task
 from app.modeling import ModelAdapter, ModelError
+from app.reports.failure import build_failure_report
 from app.reports.schema import ModelUsage, StructuredReport, ToolUsage
 from app.services.audit import AuditRecorder
 from app.services.context import ContextBuilder, ContextLimitError
@@ -222,6 +223,46 @@ def execute_agent(
     except (ValueError, TypeError) as exc:
         raise AgentExecutionError("TASK_REQUEST_INVALID") from exc
 
+    source_coverage = _source_coverage(extra_context)
+    requested_method = extract_method_reference(request)
+    source_documents = _source_documents(extra_context)
+    method_source_missing = (
+        requested_method is not None
+        and definition.code in {"1c_code_assistant", "1c_audit_agent"}
+        and not _source_contains_method(source_documents, requested_method)
+    )
+    source_context_insufficient = (
+        definition.task_kind == "module_audit" and source_coverage != "full"
+    ) or method_source_missing
+    if source_context_insufficient:
+        calls = tool_calls or []
+        limitation = (
+            "Полный исходный текст модуля не получен; частичные результаты search_code не являются достаточным evidence."
+            if source_coverage == "partial"
+            else "MCP не вернул полный исходный текст запрошенного модуля."
+        )
+        return build_failure_report(
+            task.id,
+            "SOURCE_CONTEXT_INSUFFICIENT",
+            settings.model_name,
+        ).model_copy(update={
+            "summary": "Не удалось сформировать проверенный ответ: полный исходный код запрошенного модуля не получен.",
+            "validation": {
+                "readOnly": True,
+                "errorCode": "SOURCE_CONTEXT_INSUFFICIENT",
+                "requestedMethod": requested_method,
+            },
+            "source_coverage": source_coverage,
+            "tool_usage": ToolUsage(
+                calls=len(calls),
+                duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),
+            ),
+            "limitations": [limitation],
+            "next_actions": [
+                "Уточнить объект или модуль процедуры и повторить read-only задачу после доступного read_source."
+            ],
+        })
+
     source_line_limits = _source_line_limits(extra_context)
     system_instructions = [
         "You are a read-only 1C inspection agent.",
@@ -265,47 +306,12 @@ def execute_agent(
     if report.task_id != task.id:
         raise AgentExecutionError("MODEL_REPORT_TASK_MISMATCH")
     report = _validate_source_evidence(report, extra_context)
-    source_coverage = _source_coverage(extra_context)
     limitations = list(report.limitations)
     next_actions = list(report.next_actions)
-    requested_method = extract_method_reference(request)
-    source_documents = _source_documents(extra_context)
-    method_source_missing = (
-        requested_method is not None
-        and definition.code in {"1c_code_assistant", "1c_audit_agent"}
-        and not _source_contains_method(source_documents, requested_method)
-    )
-    source_context_insufficient = (
-        definition.task_kind == "module_audit" and source_coverage != "full"
-    ) or method_source_missing
-    if source_context_insufficient:
-        limitation = (
-            "Полный исходный текст модуля не получен; findings основаны на частичных результатах search_code/MCP."
-            if source_coverage == "partial"
-            else "MCP не вернул исходный текст модуля; полноценный аудит и findings невозможны."
-        )
-        next_action = "Передать полный исходный модуль или подключить read-only source retrieval перед изменением кода."
-        if limitation not in limitations:
-            limitations.append(limitation)
-        if next_action not in next_actions:
-            next_actions.append(next_action)
     validation = dict(report.validation)
-    if source_context_insufficient:
-        validation.update({
-            "readOnly": True,
-            "errorCode": "SOURCE_CONTEXT_INSUFFICIENT",
-            "requestedMethod": requested_method,
-        })
     calls = tool_calls or []
     report = report.model_copy(
         update={
-            "status": "failed" if source_context_insufficient else report.status,
-            "summary": (
-                "Не удалось сформировать проверенный ответ: полный исходный код запрошенного модуля не получен."
-                if source_context_insufficient
-                else report.summary
-            ),
-            "findings": [] if source_context_insufficient else report.findings,
             "validation": validation,
             "source_coverage": source_coverage,
             "limitations": limitations,

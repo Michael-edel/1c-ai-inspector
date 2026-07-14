@@ -7,7 +7,8 @@ Environment: `https://inspector.michael.kz`
 Deployed application commits:
 
 - `833aeda` — v0.1 task lifecycle `created -> discovering -> analyzing -> reporting -> completed`;
-- `724d07c` — machine JSON report viewer.
+- `724d07c` — machine JSON report viewer;
+- `d15bc5b` — current application release during the final production and SSH hardening checks.
 
 Database recovery evidence:
 
@@ -31,6 +32,14 @@ Final acceptance evidence:
 - Query Agent: passed, 2 read-only calls;
 - Audit Agent: passed, 3 read-only calls, 4 persisted findings;
 - security/load: passed, including protected metrics, non-root backend and 20 concurrent health requests.
+
+SSH hardening evidence:
+
+- key-only login for `inspector-admin` and passwordless administrative commands through `sudo` were verified in a separate SSH session;
+- effective `sshd -T` values are `permitrootlogin no`, `passwordauthentication no`, `kbdinteractiveauthentication no` and `pubkeyauthentication yes`;
+- direct `root` login with the previously valid production key is rejected;
+- `ssh.service` remained active after configuration validation and reload;
+- emergency recovery remains available through the Contabo console/VNC and must be used only if key-based access is lost.
 
 Commands used:
 

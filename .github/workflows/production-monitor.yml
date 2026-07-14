@@ -1,0 +1,25 @@
+name: production-monitor
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check production health and MCP readiness
+        env:
+          BASE_URL: https://inspector.michael.kz
+          MINIMUM_TOOLS: "9"
+        run: bash infra/ops/monitor.sh

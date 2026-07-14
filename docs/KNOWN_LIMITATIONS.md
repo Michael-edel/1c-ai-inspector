@@ -5,6 +5,7 @@
 - The platform does not change 1C configuration, execute `execute_query`, apply BSL, update a test database, create Git branches or deploy artifacts.
 - Patch Planner remains proposal-only. Checkpoints, approvals, packages and manual handoff records describe a possible change; `applied` remains `false`. Controlled apply is deferred to v0.3 Sandbox Executor.
 - Only `sandbox` and `test` environments are allowed in v0.1. Staging and production execution are blocked by policy.
+- Sandbox Executor v0.3 remains disabled by default. Its future controlled writes are limited to disposable local worktrees; merge, push and information-base updates remain out of scope.
 
 ## Source and MCP data
 

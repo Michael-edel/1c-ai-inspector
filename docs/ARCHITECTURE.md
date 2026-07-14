@@ -30,6 +30,12 @@ Patch Planner consumes persisted read-only task evidence, prepares source snapsh
 
 The backend has no apply operation. It does not write to an EDT workspace, invoke a write-capable MCP tool, alter a Git working tree or update a 1C database. Controlled writes, sandbox branches, EDT validation and rollback are a separate v0.3 Sandbox Executor boundary.
 
+## Sandbox Executor v0.3 Boundary
+
+Sandbox Executor is a feature-flagged local execution contour. It consumes only an approved, signed Patch Planner package and creates a disposable Git worktree under an operator-configured root. It may modify that worktree, run fixed operator-configured validation/test commands and remove its own worktree/branch during rollback.
+
+The contour does not accept filesystem paths or commands from HTTP, does not publish write-capable MCP tools, does not merge or push a branch and does not update a 1C information base. Production keeps the feature disabled until a separate deployment review explicitly provides writable sandbox storage and validation/test adapters.
+
 ## Request and Execution Flow
 
 1. Startup loads the policy, initializes authentication and performs bounded MCP discovery.

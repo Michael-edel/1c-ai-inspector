@@ -6,6 +6,8 @@
 
 Patch Planner v0.2 may generate a signed package and a manual handoff record. Both are descriptions of an operator-reviewed change, not permission to execute it. The API must keep `applied=false`, expose no apply endpoint and reject any MCP tool outside the read-only policy. Controlled apply belongs to the separately reviewed v0.3 Sandbox Executor.
 
+Sandbox Executor v0.3 is a separate feature-flagged trust boundary. When enabled, it may write only to a disposable Git worktree below an operator-configured root. Owner authorization, package signature/hash, immutable commit, state transition and path containment are revalidated before every side effect. Commands and filesystem roots never come from HTTP. The contour cannot merge, push, deploy or update an information base.
+
 ## Trust Boundaries
 
 - **Browser and frontend:** untrusted client. The browser may submit task text and display data, but it cannot grant itself a role or authorize a tool.

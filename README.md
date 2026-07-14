@@ -2,11 +2,13 @@
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
-Документы контура: [Backlog v0.2](docs/BACKLOG_V0.2.md), [Security Model](docs/SECURITY_MODEL.md), [Architecture Overview](docs/ARCHITECTURE.md), [Known Limitations](docs/KNOWN_LIMITATIONS.md) и [матрица ошибок](docs/ERROR_MATRIX.md).
+Документы контура: [Backlog v0.2](docs/BACKLOG_V0.2.md), [Backlog v0.3](docs/BACKLOG_V0.3.md), [Security Model](docs/SECURITY_MODEL.md), [Architecture Overview](docs/ARCHITECTURE.md), [Known Limitations](docs/KNOWN_LIMITATIONS.md) и [матрица ошибок](docs/ERROR_MATRIX.md).
 
 Текущий этап v0.6 развивает proposal-only Patch Planner: система использует signed auth/RBAC или внешний JWT issuer через JWKS, автоматический read-only MCP evidence, source snapshot и signed package, но не применяет изменения к 1С, workspace или Git.
 
 Definition of Done для Patch Planner зафиксирован в `docs/BACKLOG_V0.2.md`. В v0.2 разрешена только подготовка и ручная передача подписанного пакета: Inspector всегда возвращает `applied: false`. Controlled apply, sandbox branch, EDT validation, тестовая база и rollback относятся к v0.3 Sandbox Executor.
+
+Definition of Done для Sandbox Executor зафиксирован в `docs/BACKLOG_V0.3.md`. Контур v0.3 будет регистрироваться только при `SANDBOX_EXECUTOR_ENABLED=true`; production сохраняет выключенное значение и не публикует sandbox write routes. Запись разрешается только в одноразовый Git worktree, никогда в `InfoBase1`, основной repository, staging или production.
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 

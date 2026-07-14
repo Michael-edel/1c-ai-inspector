@@ -12,9 +12,11 @@ Deployed application commits:
 
 Database recovery evidence:
 
-- application backup: `inspector-postgres-20260714T054036Z.dump`;
-- Keycloak backup: `inspector-keycloak-20260714T054038Z.dump`;
+- application backup: `inspector-postgres-20260714T122258Z.dump`;
+- Keycloak backup: `inspector-keycloak-20260714T122303Z.dump`;
 - both dumps restored successfully by `infra/ops/restore-drill.sh` into disposable `postgres:16-alpine` containers;
+- the drill waited for the final PostgreSQL server after the image init phase, avoiding the transient `pg_isready` window before the normal init restart;
+- an intentionally invalid dump failed as expected and its disposable container was removed by the same EXIT cleanup path;
 - production PostgreSQL, Keycloak and their volumes were not modified by the drill.
 
 State machine evidence:

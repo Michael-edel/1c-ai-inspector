@@ -38,7 +38,7 @@ assert_fresh() {
   test -s "$path"
 }
 
-restore_into_ephemeral_db() {
+restore_into_ephemeral_db() (
   local label="$1"
   local path="$2"
   local container="1c-ai-inspector-restore-drill-${label}-$$"
@@ -52,14 +52,20 @@ restore_into_ephemeral_db() {
   cleanup_container() {
     docker rm -f "$container" >/dev/null 2>&1 || true
   }
-  trap cleanup_container RETURN
+  # A subshell-local EXIT trap also runs when pg_restore or readiness checks fail.
+  trap cleanup_container EXIT
 
-  for attempt in $(seq 1 30); do
-    if docker exec "$container" pg_isready -U postgres -d drill >/dev/null 2>&1; then
+  for attempt in $(seq 1 60); do
+    # The official image exposes a temporary PostgreSQL server during initdb.
+    # Wait for that init phase to finish before trusting pg_isready.
+    if docker logs "$container" 2>&1 \
+        | grep -Fq "PostgreSQL init process complete; ready for start up." \
+      && docker exec "$container" pg_isready -U postgres -d drill >/dev/null 2>&1; then
       break
     fi
-    if (( attempt == 30 )); then
+    if (( attempt == 60 )); then
       echo "Temporary PostgreSQL container did not become ready: $container" >&2
+      docker logs "$container" >&2 || true
       exit 1
     fi
     sleep 1
@@ -68,7 +74,7 @@ restore_into_ephemeral_db() {
   cat "$path" | docker exec -i -e PGPASSWORD=restore-drill "$container" \
     pg_restore -U postgres -d drill --no-owner --no-privileges --exit-on-error --single-transaction
   echo "Restore drill passed for $label: $(basename "$path")"
-}
+)
 
 postgres_dump="$(latest_dump inspector-postgres)"
 keycloak_dump="$(latest_dump inspector-keycloak)"

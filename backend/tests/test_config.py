@@ -87,3 +87,19 @@ def test_model_retries_have_a_bounded_default() -> None:
     assert settings.model_retries == 1
     with pytest.raises(ValidationError):
         make_settings(model_retries=4)
+
+
+def test_sandbox_executor_is_disabled_by_default_and_requires_operator_paths() -> None:
+    assert make_settings().sandbox_executor_enabled is False
+    with pytest.raises(ValidationError, match="SANDBOX_SOURCE_REPOSITORY"):
+        make_settings(
+            sandbox_executor_enabled=True,
+            inspector_package_signing_secret="s" * 32,
+        )
+    settings = make_settings(
+        sandbox_executor_enabled=True,
+        sandbox_source_repository=Path("source"),
+        sandbox_root=Path("sandboxes"),
+        inspector_package_signing_secret="s" * 32,
+    )
+    assert settings.sandbox_root == Path("sandboxes")

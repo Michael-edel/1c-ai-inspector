@@ -51,3 +51,17 @@ class PatchStatus(StrEnum):
     AWAITING_APPROVAL = "awaiting_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class SandboxExecutionStatus(StrEnum):
+    CREATED = "created"
+    PREPARING = "preparing"
+    PREPARED = "prepared"
+    APPLYING = "applying"
+    VALIDATING = "validating"
+    TESTING = "testing"
+    AWAITING_ACCEPTANCE = "awaiting_acceptance"
+    ROLLBACK_REQUIRED = "rollback_required"
+    ROLLING_BACK = "rolling_back"
+    ROLLED_BACK = "rolled_back"
+    FAILED = "failed"

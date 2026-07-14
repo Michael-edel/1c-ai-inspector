@@ -198,3 +198,32 @@ class PatchPackageVersion(TimestampMixin, Base):
     package_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class SandboxExecution(TimestampMixin, Base):
+    __tablename__ = "sandbox_executions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(ForeignKey("patch_proposals.id"), nullable=False)
+    package_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    branch_name: Mapped[str | None] = mapped_column(String(255))
+    worktree_path: Mapped[str | None] = mapped_column(Text)
+    validation_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    test_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    created_by: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+class SandboxExecutionEvent(TimestampMixin, Base):
+    __tablename__ = "sandbox_execution_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    execution_id: Mapped[str] = mapped_column(
+        ForeignKey("sandbox_executions.id"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")

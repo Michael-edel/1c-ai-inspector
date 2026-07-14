@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     mcp_policy_path: Path = Path("/app/mcp_policy.yaml")
     prompts_path: Path = Path("/app/prompts")
     patch_git_repository: Path | None = None
+    sandbox_executor_enabled: bool = False
+    sandbox_source_repository: Path | None = None
+    sandbox_root: Path | None = None
+    sandbox_validation_command: str | None = None
+    sandbox_test_command: str | None = None
+    sandbox_command_timeout_sec: int = Field(default=300, ge=1, le=3_600)
     app_environment: str = "sandbox"
     inspector_auth_secret: str | None = Field(default=None, min_length=32)
     inspector_auth_secret_previous: str | None = Field(default=None, min_length=32)
@@ -84,6 +90,13 @@ class Settings(BaseSettings):
                 raise ValueError("AUTH_AUDIENCE is required in jwks mode")
             if not self.inspector_package_signing_secret:
                 raise ValueError("INSPECTOR_PACKAGE_SIGNING_SECRET is required in jwks mode")
+        if self.sandbox_executor_enabled:
+            if not self.sandbox_source_repository:
+                raise ValueError("SANDBOX_SOURCE_REPOSITORY is required when Sandbox Executor is enabled")
+            if not self.sandbox_root:
+                raise ValueError("SANDBOX_ROOT is required when Sandbox Executor is enabled")
+            if not self.inspector_package_signing_secret:
+                raise ValueError("INSPECTOR_PACKAGE_SIGNING_SECRET is required when Sandbox Executor is enabled")
         return self
 
 

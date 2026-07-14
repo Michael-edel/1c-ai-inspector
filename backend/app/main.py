@@ -14,6 +14,7 @@ from app.api.projects import router as projects_router
 from app.api.patches import router as patches_router
 from app.api.system import router as system_router
 from app.api.tasks import router as tasks_router
+from app.api.sandbox import router as sandbox_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import get_session_factory
@@ -87,6 +88,8 @@ app.include_router(projects_router)
 app.include_router(patches_router)
 app.include_router(tasks_router)
 app.include_router(agents_router)
+if get_settings().sandbox_executor_enabled:
+    app.include_router(sandbox_router)
 
 
 @app.middleware("http")

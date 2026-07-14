@@ -1,0 +1,166 @@
+"""Feature-flagged Sandbox Executor API."""
+
+import json
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import require_identity
+from app.db.session import get_db
+from app.models import (
+    PatchPackageVersion,
+    PatchProposal,
+    SandboxExecution,
+    SandboxExecutionEvent,
+)
+from app.services.auth import AuthContext
+from app.services.sandbox_audit import record_sandbox_event
+from app.services.sandbox_workflow import SandboxWorkflowError, validate_execution_request
+
+router = APIRouter(prefix="/api/v1/sandbox-executions", tags=["sandbox-executions"])
+
+
+class SandboxExecutionCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    proposal_id: str = Field(alias="proposalId", min_length=1)
+    package_version: int = Field(alias="packageVersion", ge=1)
+    package_sha256: str = Field(alias="packageSha256", pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(min_length=1, max_length=10_000)
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_sandbox_execution(
+    payload: SandboxExecutionCreateRequest,
+    request: Request,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    proposal = db.get(PatchProposal, payload.proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Sandbox proposal not found")
+    package = db.scalar(
+        select(PatchPackageVersion).where(
+            PatchPackageVersion.proposal_id == proposal.id,
+            PatchPackageVersion.version == payload.package_version,
+        )
+    )
+    if package is None:
+        raise HTTPException(status_code=404, detail="Sandbox package not found")
+    secret = request.app.state.settings.inspector_package_signing_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="SANDBOX_SIGNING_NOT_CONFIGURED")
+    try:
+        validate_execution_request(
+            proposal,
+            package,
+            identity.role,
+            payload.package_sha256,
+            secret,
+        )
+    except SandboxWorkflowError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    execution = SandboxExecution(
+        id=f"sbe_{uuid4().hex}",
+        proposal_id=proposal.id,
+        package_version=package.version,
+        package_sha256=package.package_sha256,
+        source_commit=str(proposal.source_revision),
+        status="created",
+        validation_json="{}",
+        test_json="{}",
+        created_by=identity.subject,
+    )
+    db.add(execution)
+    db.flush()
+    record_sandbox_event(
+        db,
+        execution.id,
+        "execution_created",
+        identity.subject,
+        {
+            "proposalId": proposal.id,
+            "packageVersion": package.version,
+            "packageSha256": package.package_sha256,
+            "sourceCommit": execution.source_commit,
+            "note": payload.note,
+        },
+    )
+    db.commit()
+    return _execution_response(execution)
+
+
+@router.get("")
+def list_sandbox_executions(
+    limit: int = Query(default=20, ge=1, le=100),
+    _: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    rows = db.scalars(
+        select(SandboxExecution)
+        .order_by(SandboxExecution.created_at.desc(), SandboxExecution.id.desc())
+        .limit(limit)
+    ).all()
+    return [_execution_response(row) for row in rows]
+
+
+@router.get("/{execution_id}")
+def get_sandbox_execution(
+    execution_id: str,
+    _: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    execution = db.get(SandboxExecution, execution_id)
+    if execution is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    return _execution_response(execution)
+
+
+@router.get("/{execution_id}/events")
+def get_sandbox_events(
+    execution_id: str,
+    _: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(SandboxExecution, execution_id) is None:
+        raise HTTPException(status_code=404, detail="Sandbox execution not found")
+    events = db.scalars(
+        select(SandboxExecutionEvent)
+        .where(SandboxExecutionEvent.execution_id == execution_id)
+        .order_by(SandboxExecutionEvent.id)
+    ).all()
+    return {
+        "executionId": execution_id,
+        "events": [
+            {
+                "id": event.id,
+                "type": event.event_type,
+                "actor": event.actor,
+                "payload": json.loads(event.payload_json),
+                "createdAt": event.created_at.isoformat(),
+            }
+            for event in events
+        ],
+    }
+
+
+def _execution_response(execution: SandboxExecution) -> dict[str, object]:
+    return {
+        "id": execution.id,
+        "proposalId": execution.proposal_id,
+        "packageVersion": execution.package_version,
+        "packageSha256": execution.package_sha256,
+        "sourceCommit": execution.source_commit,
+        "status": execution.status,
+        "branchName": execution.branch_name,
+        "validation": json.loads(execution.validation_json),
+        "test": json.loads(execution.test_json),
+        "lastErrorCode": execution.last_error_code,
+        "createdBy": execution.created_by,
+        "createdAt": execution.created_at.isoformat(),
+        "updatedAt": execution.updated_at.isoformat(),
+        "appliedToInformationBase": False,
+    }

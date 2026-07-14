@@ -10,6 +10,8 @@ Definition of Done для Patch Planner зафиксирован в `docs/BACKLO
 
 Definition of Done для Sandbox Executor зафиксирован в `docs/BACKLOG_V0.3.md`. Контур v0.3 будет регистрироваться только при `SANDBOX_EXECUTOR_ENABLED=true`; production сохраняет выключенное значение и не публикует sandbox write routes. Запись разрешается только в одноразовый Git worktree, никогда в `InfoBase1`, основной repository, staging или production.
 
+Первый срез v0.3 добавляет только feature-flagged API и persistence: `POST /api/v1/sandbox-executions` проверяет owner role, approved proposal, immutable package version, SHA-256, HMAC signature и Git checkpoint, после чего сохраняет execution в `created` и append-only событие. При выключенном `SANDBOX_EXECUTOR_ENABLED` router отсутствует в OpenAPI. На этом срезе worktree ещё не создаётся и diff не применяется.
+
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
 `POST /api/v1/patch-proposals/from-finding` создает proposal из завершенной задачи и сохраненного finding. Endpoint требует Bearer identity, берет Original только из соответствующего успешного `read-only` вызова `read_source`, отклоняет отсутствующий или неоднозначный source и фиксирует `taskId`, `findingId`, `toolCallId` и модуль в событии `source_imported`. В UI после загрузки отчета можно выбрать finding; введенное вручную поле Original в этом режиме backend не использует.

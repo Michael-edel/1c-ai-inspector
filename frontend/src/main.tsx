@@ -15,7 +15,7 @@ type PersistedFinding = ReportFinding & { id: string };
 type Report = { status: string; summary: string; sourceCoverage?: "full" | "partial" | "none" | "unknown"; findings: ReportFinding[]; persistedFindings: PersistedFinding[]; limitations?: string[]; nextActions?: string[]; objectsReviewed?: string[]; validation?: { readOnly?: boolean; sourceComplete?: boolean; sourceEvidence?: { status?: string; invalidCount?: number; excerptCount?: number; droppedFindings?: number }; retrievalTools?: string[] }; toolUsage?: { calls: number; durationMs: number }; modelUsage?: { model?: string; inputTokens: number; outputTokens: number; cachedInputTokens?: number; durationMs?: number; estimatedCost: number }; execution?: { promptVersion: string; modelProvider: string; modelName: string; policyVersion: string; policyChecksum: string; toolsetChecksum: string } };
 type ReportExport = { taskId: string; status: string; report: Report; audit: Audit };
 type PatchImpact = { objectFqn: string; relation: string; risk: string; source: string };
-type PatchProposal = { id: string; status: string; title: string; summary: string; sourceRevision: string | null; diff: string; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null; sourceValidationStatus: string; validationStatus: string };
+type PatchProposal = { id: string; status: string; title: string; summary: string; sourceRevision: string | null; diff: string; files: { path: string; original: string; proposed: string }[]; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null; sourceValidationStatus: string; validationStatus: string };
 type PatchEvent = { id: number; type: string; actor: string; payload: Record<string, unknown>; createdAt: string };
 
 const isTerminalTaskStatus = (status: string) => ["completed", "failed", "cancelled"].includes(status);
@@ -96,6 +96,9 @@ const publicErrorMessages: Record<string, string> = {
   TASK_NOT_CANCELLABLE: "Задачу уже нельзя отменить: она завершена или завершилась ошибкой.",
   TASK_NOT_FOUND: "Задача не найдена. Обновите историю задач.",
   REQUEST_TOO_LARGE: "Запрос слишком большой.",
+  PATCH_TASK_NOT_COMPLETED: "Finding можно использовать только из завершенной задачи.",
+  PATCH_SOURCE_NOT_AVAILABLE: "В задаче нет подтвержденного полного read-only исходника для этого finding.",
+  PATCH_SOURCE_AMBIGUOUS: "Найдено несколько исходников для finding. Выполните новую точную проверку модуля.",
 };
 const sourceCoverageLabels: Record<string, string> = { full: "полный исходный модуль", partial: "частичные фрагменты", none: "исходный код не получен", unknown: "не определен" };
 const shortChecksum = (value: string) => `${value.slice(0, 16)}…`;
@@ -183,6 +186,7 @@ function App() {
   const [patchTitle, setPatchTitle] = useState("Proposal-only change");
   const [patchSummary, setPatchSummary] = useState("Review a proposed BSL change before any manual application.");
   const [patchRevision, setPatchRevision] = useState("local-draft");
+  const [patchFindingId, setPatchFindingId] = useState("");
   const [patchOriginal, setPatchOriginal] = useState("Procedure Check();\n\tReturn True;\nEndProcedure;");
   const [patchProposed, setPatchProposed] = useState("Procedure Check();\n\t// review before apply\n\tReturn True;\nEndProcedure;");
   const [patchActor, setPatchActor] = useState("reviewer");
@@ -239,6 +243,10 @@ function App() {
   const canCreateTask = readiness?.status === "ready";
   const shouldUseAuditAgent = auditAgentMismatch(selectedAgent, taskText);
   const visibleFindings = report?.persistedFindings?.length ? report.persistedFindings : report?.findings ?? [];
+  useEffect(() => {
+    const findings = report?.persistedFindings ?? [];
+    setPatchFindingId((current) => findings.some((item) => item.id === current) ? current : findings[0]?.id ?? "");
+  }, [report]);
   const historyAgentOptions = Array.from(new Map(
     taskHistory.map((item) => [item.agentCode ?? item.agentName ?? "unknown", item.agentName ?? item.agentCode ?? "Агент"]),
   )).sort((left, right) => left[1].localeCompare(right[1], "ru"));
@@ -438,23 +446,38 @@ function App() {
 
   const createPatchProposal = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedProject || !patchPath.trim() || patchOriginal === patchProposed) return;
+    if (!selectedProject || !patchPath.trim() || (!patchFindingId && patchOriginal === patchProposed)) return;
+    if (patchFindingId && (!taskId || !authToken.trim())) {
+      setError("Для импорта исходника из отчета нужен Inspector token.");
+      return;
+    }
     setPatchBusy(true);
     setError("");
     try {
-      const created = await api<PatchProposal>("/api/v1/patch-proposals", {
+      const fromFinding = Boolean(patchFindingId && taskId);
+      const created = await api<PatchProposal>(fromFinding ? "/api/v1/patch-proposals/from-finding" : "/api/v1/patch-proposals", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        headers: { "Content-Type": "application/json", ...(fromFinding ? { Authorization: `Bearer ${authToken.trim()}` } : {}) },
+        body: JSON.stringify(fromFinding ? {
+          taskId,
+          findingId: patchFindingId,
+          title: patchTitle.trim(),
+          summary: patchSummary.trim(),
+          path: patchPath.trim(),
+          proposed: patchProposed,
+          sourceRevision: patchRevision.trim() || null,
+        } : {
           projectId: selectedProject,
+          taskId: taskId || null,
           title: patchTitle.trim(),
           summary: patchSummary.trim(),
           sourceRevision: patchRevision.trim() || null,
           files: [{ path: patchPath.trim(), original: patchOriginal, proposed: patchProposed }],
         }),
       });
+      if (created.files[0]) setPatchOriginal(created.files[0].original);
       await loadPatch(created.id);
-      setMessage("Proposal создан. Изменения остаются только в preview.");
+      setMessage(fromFinding ? "Proposal создан из сохраненного read-only source finding." : "Proposal создан. Изменения остаются только в preview.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Не удалось создать proposal");
     } finally {
@@ -508,6 +531,7 @@ function App() {
       <header className="topbar"><div><p className="eyebrow">CONTROL SURFACE</p><h1>Инспектор 1С</h1></div><button className="ghost-button" onClick={() => void refresh()}>Обновить состояние</button></header>
       <section className="hero-grid" id="overview"><div className="hero-copy"><span className="status-kicker">READ-ONLY MVP</span><h2>Проверяем контур до запуска агента.</h2><p>Каждый вызов проходит через policy, нормализованный toolset и execution snapshot. Запись в проект не разрешена.</p></div><div className={`readiness-card ${readiness?.status === "ready" ? "ready" : "blocked"}`}><div className="card-label">READINESS GATE</div><div className="readiness-status">{readiness?.status === "ready" ? "READY" : "NOT READY"}</div><p>{readiness?.reasons?.[0] === "no_tools_discovered" ? "MCP tools ещё не обнаружены" : "Проверка выполняется"}</p><div className="progress-line"><span /></div></div></section>
       {error && <div className="alert error">{error}</div>}{message && <div className="alert success">{message}</div>}
+      {report?.persistedFindings.length ? <section className="panel patch-source-panel"><div className="panel-heading"><div><span className="panel-index">SRC</span><h3>Источник Patch Planner</h3></div><span className="panel-note">READ-ONLY PROVENANCE</span></div><label htmlFor="patch-finding">Finding с сохраненным исходником</label><select id="patch-finding" value={patchFindingId} onChange={(event) => setPatchFindingId(event.target.value)}><option value="">Ручной ввод Original</option>{report.persistedFindings.map((finding, index) => <option key={finding.id} value={finding.id}>Finding {index + 1}: {finding.objectFqn} · {finding.module}</option>)}</select><p className="panel-intro">При выбранном finding backend игнорирует поле Original и берет код только из успешного сохраненного read_source. Для создания нужен Inspector token.</p></section> : null}
       {taskId && <section className={`task-monitor ${isTerminalTaskStatus(taskStatus) ? "finished" : ""} ${taskStatus === "failed" ? "failed" : ""} ${taskCancelRequested ? "cancel-requested" : ""}`} aria-live="polite"><div className="task-monitor-head"><div><span className="card-label">TASK MONITOR</span><strong>{taskStatusLabel(taskStatus)}</strong></div><div className="task-monitor-actions"><span className="task-elapsed">Прошло {formatElapsed(taskElapsedSeconds)}</span>{isCancellableTaskStatus(taskStatus) && <button type="button" className="ghost-button compact cancel-button" onClick={() => void cancelTask()} disabled={cancelBusy || taskCancelRequested}>{cancelBusy ? "ОТМЕНА..." : taskCancelRequested ? "ОТМЕНА ЗАПРОШЕНА" : "ОТМЕНИТЬ"}</button>}</div></div><div className="task-monitor-track"><span /></div><p>{taskCancelRequested && !isTerminalTaskStatus(taskStatus) ? "Запрос на отмену принят. Текущий read-only вызов завершится, новые этапы не начнутся." : taskStatusDescription(taskStatus)}</p>{taskPollingError && <p className="task-monitor-warning">{taskPollingError}</p>}{taskLastErrorCode && <p className="task-monitor-warning">Код ошибки: {taskLastErrorCode}</p>}{taskElapsedSeconds >= 45 && !isTerminalTaskStatus(taskStatus) && !taskCancelRequested && <p className="task-monitor-warning">Проверка длится дольше обычного. MCP или модель могут отвечать медленно.</p>}</section>}
       <section className="metrics-row"><div className="metric"><span>Policy</span><strong>{policy?.version ?? "—"}</strong><small>{policy?.policyId ?? "loading"}</small></div><div className="metric"><span>Capabilities</span><strong>{policy?.normalizedTools.length ?? 0}</strong><small>{readiness?.capabilitiesStatus ?? "—"}</small></div><div className="metric"><span>Discovered</span><strong>{policy?.discoveredTools.length ?? 0}</strong><small>from MCP server</small></div></section>
       <section className="panel task-history-panel" id="history"><div className="panel-heading"><div><span className="panel-index">00</span><h3>История задач</h3><span className="panel-note">{taskHistory.length} задач</span></div><div className="history-toolbar"><button className="ghost-button compact" onClick={() => setHistoryExpanded((expanded) => !expanded)}>{historyExpanded ? "СВЕРНУТЬ" : "ПОКАЗАТЬ ВСЕ"}</button><button className="ghost-button compact" onClick={() => void loadTaskHistory()}>ОБНОВИТЬ</button></div></div>{historyExpanded && <div className="history-filters" aria-label="Фильтры истории задач"><div className="history-filter"><label htmlFor="history-status">Статус</label><select id="history-status" value={historyStatusFilter} onChange={(event) => setHistoryStatusFilter(event.target.value)}><option value="all">Все статусы</option>{["created", "discovering", "analyzing", "reporting", "completed", "failed", "cancelled", "queued", "running"].map((status) => <option key={status} value={status}>{taskStatusLabel(status)}</option>)}</select></div><div className="history-filter"><label htmlFor="history-agent">Агент</label><select id="history-agent" value={historyAgentFilter} onChange={(event) => setHistoryAgentFilter(event.target.value)}><option value="all">Все агенты</option>{historyAgentOptions.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></div><span className="history-filter-count">Показано: {filteredTaskHistory.length} из {taskHistory.length}</span></div>}{!historyExpanded && taskHistory.length > 1 && <p className="history-collapsed-note">Показана последняя задача. Нажмите «ПОКАЗАТЬ ВСЕ», чтобы открыть историю и фильтры.</p>}{visibleTaskHistory.length ? <div className="task-history-list">{visibleTaskHistory.map((item) => <button type="button" className={`task-history-row ${item.taskId === taskId ? "selected" : ""}`} key={item.taskId} onClick={() => selectHistoryTask(item)}><span className={`history-status history-${item.status}`}>{taskStatusLabel(item.status)}</span><span className="history-main"><strong>{item.agentName ?? item.agentCode ?? "Агент"}</strong><small>{item.projectName ?? item.projectId} · {formatTaskTime(item.createdAt)}{item.cancelRequested ? " · отмена запрошена" : ""}</small></span><span className="history-id">{item.taskId.slice(0, 16)}…</span></button>)}</div> : <p className="empty-note">{historyExpanded ? "По выбранным фильтрам задач нет." : "Задач пока нет."}</p>}</section>

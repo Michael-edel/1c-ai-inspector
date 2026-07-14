@@ -17,6 +17,18 @@ from app.services.patch_source import revalidate_source
 from app.services.patch_validation import validate_patch_proposal
 from app.services.auth import AuthError, issue_auth_token, verify_auth_token, verify_auth_token_with_rotation
 from app.services.patch_policy import PatchPolicyError, authorize_environment
+from app.services.patch_task_source import PatchTaskSourceError, resolve_task_source
+
+
+class StoredToolCall:
+    def __init__(self, call_id: str, output: dict[str, object], *, mode: str = "read-only") -> None:
+        import json
+
+        self.id = call_id
+        self.tool_name = "read_source"
+        self.mode = mode
+        self.status = "completed"
+        self.output_json = json.dumps(output, ensure_ascii=False)
 
 
 def test_patch_snapshot_generates_unified_diff_and_hashes() -> None:
@@ -200,3 +212,42 @@ def test_patch_policy_requires_owner_for_candidates_and_test() -> None:
     with pytest.raises(PatchPolicyError, match="PATCH_TEST_OWNER_REQUIRED"):
         authorize_environment("maintainer", "test", "test", [{"risk": "evidenced"}])
     authorize_environment("maintainer", "sandbox", "sandbox", [{"risk": "evidenced"}])
+
+
+def test_task_source_resolves_matching_persisted_read_only_module() -> None:
+    call = StoredToolCall(
+        "call_source",
+        {
+            "sourceComplete": True,
+            "module": "Документ.ЗаказКлиента.МодульОбъекта",
+            "source": "Процедура Проверить()\nКонецПроцедуры",
+            "sourceRevision": "commit-123",
+        },
+    )
+
+    source = resolve_task_source("Документ.ЗаказКлиента", "МодульОбъекта", [call])
+
+    assert source.tool_call_id == "call_source"
+    assert source.revision == "commit-123"
+    assert source.source.startswith("Процедура")
+
+
+def test_task_source_rejects_non_read_only_and_ambiguous_evidence() -> None:
+    writable = StoredToolCall(
+        "call_write",
+        {"sourceComplete": True, "module": "Module", "source": "A"},
+        mode="write",
+    )
+    with pytest.raises(PatchTaskSourceError, match="PATCH_SOURCE_NOT_AVAILABLE"):
+        resolve_task_source("Document.Order", "ObjectModule", [writable])
+
+    first = StoredToolCall(
+        "call_1",
+        {"sourceComplete": True, "module": "Document.Order.ObjectModule", "source": "A"},
+    )
+    second = StoredToolCall(
+        "call_2",
+        {"sourceComplete": True, "module": "Document.Order.ObjectModule", "source": "B"},
+    )
+    with pytest.raises(PatchTaskSourceError, match="PATCH_SOURCE_AMBIGUOUS"):
+        resolve_task_source("Document.Order", "ObjectModule", [first, second])

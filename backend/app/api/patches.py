@@ -11,10 +11,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import PatchStatus
+from app.core.enums import PatchStatus, TaskStatus
 from app.api.dependencies import require_identity
 from app.db.session import get_db
-from app.models import PatchEvent, PatchPackageVersion, PatchProposal, Project, Task
+from app.models import (
+    Finding,
+    PatchEvent,
+    PatchPackageVersion,
+    PatchProposal,
+    Project,
+    Task,
+    ToolCall,
+)
 from app.services.patch_audit import record_patch_event
 from app.services.patch_proposals import PatchProposalError, build_patch_snapshot, serialize_snapshot
 from app.services.patch_impact import analyze_patch_impact, enrich_patch_impact
@@ -33,6 +41,7 @@ from app.services.patch_mcp_evidence import extract_search_evidence
 from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.services.auth import AuthContext
 from app.services.patch_policy import PatchPolicyError, authorize_environment
+from app.services.patch_task_source import PatchTaskSourceError, resolve_task_source
 
 router = APIRouter(prefix="/api/v1/patch-proposals", tags=["patch-proposals"])
 
@@ -52,6 +61,18 @@ class PatchProposalCreateRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=10_000)
     source_revision: str | None = Field(default=None, alias="sourceRevision", max_length=128)
     files: list[PatchFileInput] = Field(min_length=1, max_length=50)
+
+
+class PatchProposalFromFindingRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    task_id: str = Field(alias="taskId", min_length=1)
+    finding_id: str = Field(alias="findingId", min_length=1)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=10_000)
+    path: str = Field(min_length=1, max_length=500)
+    proposed: str = Field(max_length=500_000)
+    source_revision: str | None = Field(default=None, alias="sourceRevision", max_length=128)
 
 
 class PatchDecisionRequest(BaseModel):
@@ -114,6 +135,68 @@ def create_patch_proposal(
     db.add(proposal)
     db.flush()
     record_patch_event(db, proposal.id, "created", "system", {"status": proposal.status})
+    db.commit()
+    return _proposal_response(proposal)
+
+
+@router.post("/from-finding", status_code=status.HTTP_201_CREATED)
+def create_patch_proposal_from_finding(
+    payload: PatchProposalFromFindingRequest,
+    identity: AuthContext = Depends(require_identity),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    task = db.get(Task, payload.task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != TaskStatus.COMPLETED.value:
+        raise HTTPException(status_code=409, detail="PATCH_TASK_NOT_COMPLETED")
+    finding = db.get(Finding, payload.finding_id)
+    if finding is None or finding.task_id != task.id:
+        raise HTTPException(status_code=404, detail="Patch finding not found")
+    project = db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    calls = db.scalars(
+        select(ToolCall)
+        .where(ToolCall.task_id == task.id, ToolCall.tool_name == "read_source")
+        .order_by(ToolCall.created_at, ToolCall.id)
+    ).all()
+    try:
+        source = resolve_task_source(finding.object_fqn, finding.module, calls)
+        diff_text, snapshot = build_patch_snapshot(
+            [{"path": payload.path, "original": source.source, "proposed": payload.proposed}]
+        )
+    except (PatchTaskSourceError, PatchProposalError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    proposal = PatchProposal(
+        id=f"pp_{uuid4().hex}",
+        project_id=project.id,
+        task_id=task.id,
+        status=PatchStatus.PROPOSED.value,
+        title=payload.title,
+        summary=payload.summary,
+        target_environment=project.environment,
+        source_revision=source.revision or payload.source_revision,
+        diff_text=diff_text,
+        files_json=serialize_snapshot(snapshot),
+        impact_json="[]",
+    )
+    db.add(proposal)
+    db.flush()
+    record_patch_event(db, proposal.id, "created", identity.subject, {"status": proposal.status})
+    record_patch_event(
+        db,
+        proposal.id,
+        "source_imported",
+        identity.subject,
+        {
+            "taskId": task.id,
+            "findingId": finding.id,
+            "toolCallId": source.tool_call_id,
+            "sourceModule": source.module,
+            "mode": "read-only",
+        },
+    )
     db.commit()
     return _proposal_response(proposal)
 

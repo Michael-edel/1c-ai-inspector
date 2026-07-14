@@ -10,6 +10,8 @@ Definition of Done для Patch Planner зафиксирован в `docs/BACKLO
 
 `POST /api/v1/patch-proposals` принимает безопасные пары `original/proposed`, проверяет относительные пути, считает SHA-256 и сохраняет unified diff. Proposal создается в статусе `proposed`; файловая система и Git не изменяются.
 
+`POST /api/v1/patch-proposals/from-finding` создает proposal из завершенной задачи и сохраненного finding. Endpoint требует Bearer identity, берет Original только из соответствующего успешного `read-only` вызова `read_source`, отклоняет отсутствующий или неоднозначный source и фиксирует `taskId`, `findingId`, `toolCallId` и модуль в событии `source_imported`. В UI после загрузки отчета можно выбрать finding; введенное вручную поле Original в этом режиме backend не использует.
+
 `POST /api/v1/patch-proposals/{id}/impact` строит candidate impact analysis по измененным путям 1С. В body можно передать только evidence от read-only `search_code` или `get_object_structure`; совпавшие объекты получают `risk: evidenced`, остальные остаются candidate.
 
 `POST /api/v1/patch-proposals/{id}/impact/mcp` автоматически вызывает настроенный policy-published `MCP_PATCH_SEARCH_TOOL` через существующий bridge/Streamable HTTP connector. Вызов допускается только для категории `code.search`; результат ограничивается 20 evidence на объект и записывается в proposal audit.

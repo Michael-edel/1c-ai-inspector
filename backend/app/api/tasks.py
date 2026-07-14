@@ -15,6 +15,7 @@ from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
+from app.services.source_retrieval_plan import ensure_full_source_retrieval
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
@@ -263,6 +264,16 @@ def create_task(
             "PROJECT_CAPABILITIES_NOT_READY",
             "Project capabilities do not satisfy the selected agent.",
         )
+
+    payload = payload.model_copy(
+        update={
+            "request": ensure_full_source_retrieval(
+                payload.request,
+                agent.code,
+                snapshot.published_tools,
+            )
+        }
+    )
 
     task = _persist_task(
         db,

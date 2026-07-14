@@ -51,7 +51,7 @@ const taskStatusLabel = (status: string) => taskStatusLabels[status] ?? "Под�
 const taskStatusDescription = (status: string) => taskStatusDescriptions[status] ?? "Получаем состояние задачи.";
 const formatTaskTime = (value: string) => new Date(value).toLocaleString();
 const extractObjectReference = (text: string) => {
-  const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
+  const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)(?:\s+сведени[йя])?\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
   if (!match) return null;
   const type = match[1].toLowerCase();
   return {
@@ -60,13 +60,14 @@ const extractObjectReference = (text: string) => {
     category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
   };
 };
+const extractMethodReference = (text: string) => text.match(/\b(?:процедур\w*|функци\w*|метод\w*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)\b/i)?.[1] ?? null;
 const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
 const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: string[] = []) => {
   const query = text.trim();
   const object = extractObjectReference(query);
-  const searchQuery = object?.name ?? query;
+  const searchQuery = extractMethodReference(query) ?? object?.name ?? query;
   if (agentCode === "1c_query_agent") {
     const metadataArguments = object ? { filter: metadataCategoryForType(object.type) } : {};
     return [
@@ -81,6 +82,19 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
       plan.push({ tool: "read_source", arguments: { module: `${object.category}.${object.name}.${moduleType}` } });
     }
     plan.push(
+      { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } },
+      { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
+    );
+    return plan;
+  }
+  if (agentCode === "1c_code_assistant" && object) {
+    const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
+    const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
+    if (publishedTools.includes("read_source")) {
+      plan.push({ tool: "read_source", arguments: { module: `${object.category}.${object.name}.${moduleType}` } });
+    }
+    plan.push(
+      { tool: "bsl_syntax_help", arguments: { query: searchQuery } },
       { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } },
       { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
     );

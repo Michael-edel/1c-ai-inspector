@@ -60,6 +60,53 @@ def test_create_task_persists_task_before_execution_snapshot() -> None:
         assert snapshot_row is not None
 
 
+def test_create_task_persists_server_enforced_full_source_step() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    snapshot = PolicyProvider(Path(__file__).parents[2] / "mcp_policy.yaml").load()
+    state = SimpleNamespace(
+        policy_snapshot=snapshot,
+        discovered_tools=set(snapshot.published_tools),
+        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+    )
+    request = Request({"type": "http", "app": SimpleNamespace(state=state)})
+
+    with Session(engine) as session:
+        session.add(
+            Project(
+                id="prj_source_enforcement",
+                mcp_server_id="mcp_edt",
+                external_id="configuration:source-enforcement",
+                name="Source enforcement",
+                environment="sandbox",
+                available_capabilities=json.dumps(REQUIRED_CAPABILITIES),
+            )
+        )
+        session.commit()
+
+        response = create_task(
+            TaskCreateRequest(
+                projectId="prj_source_enforcement",
+                agentId="1c_code_assistant",
+                request={
+                    "text": "Прочитай модуль документа ЗаказКлиента и найди процедуру ОбработкаЗаполнения",
+                    "retrieval": [{"tool": "search_code", "arguments": {"query": "ОбработкаЗаполнения"}}],
+                },
+            ),
+            request,
+            session,
+        )
+
+        persisted = session.get(Task, response.task_id)
+        assert persisted is not None
+        retrieval = json.loads(persisted.request_json)["retrieval"]
+        assert retrieval[0] == {
+            "tool": "read_source",
+            "arguments": {"module": "Документ.ЗаказКлиента.МодульОбъекта"},
+        }
+        assert retrieval[1]["tool"] == "search_code"
+
+
 def test_create_task_blocks_environment_and_records_audit_without_tools() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

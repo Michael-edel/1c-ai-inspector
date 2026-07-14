@@ -96,6 +96,27 @@ def test_openai_compatible_adapter_does_not_retry_invalid_json_response() -> Non
     assert attempts == 1
 
 
+def test_openai_compatible_adapter_does_not_retry_exhausted_quota(monkeypatch) -> None:
+    attempts = 0
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("quota failure must not retry"))
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            429,
+            json={"error": {"type": "insufficient_quota", "code": "insufficient_quota"}},
+        )
+
+    settings = get_settings().model_copy(update={"model_retries": 2})
+    with pytest.raises(ModelError, match="MODEL_QUOTA_EXCEEDED"):
+        OpenAICompatibleAdapter(
+            settings, transport=httpx.MockTransport(handler)
+        ).complete([])
+
+    assert attempts == 1
+
+
 def test_gpt5_adapter_uses_model_default_temperature() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)

@@ -41,7 +41,17 @@ def build_agent_failure_report(
             duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),
         ),
     }
-    if error_code.startswith("MODEL_") and source_coverage == "full":
+    if error_code == "MODEL_QUOTA_EXCEEDED" and source_coverage == "full":
+        update.update({
+            "summary": "Исходный код получен, но MODEL API отклонил запрос: квота API исчерпана.",
+            "limitations": [
+                "Read-only MCP retrieval завершен успешно; OpenAI API вернул insufficient_quota."
+            ],
+            "next_actions": [
+                "Проверить API billing и доступный баланс OpenAI, затем повторить задачу."
+            ],
+        })
+    elif error_code.startswith("MODEL_") and source_coverage == "full":
         update.update({
             "summary": "Исходный код получен, но MODEL API не сформировал проверенный ответ.",
             "limitations": [

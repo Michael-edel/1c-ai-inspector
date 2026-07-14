@@ -135,6 +135,25 @@ def test_model_failure_report_preserves_completed_retrieval() -> None:
     assert any("Повторить задачу" in item for item in report.next_actions)
 
 
+def test_model_quota_failure_report_has_actionable_reason() -> None:
+    report = build_agent_failure_report(
+        "tsk_quota_failed",
+        "MODEL_QUOTA_EXCEEDED",
+        "gpt-test",
+        extra_context=[{
+            "source": "MCP",
+            "tool": "read_source",
+            "data": {"sourceComplete": True, "content": []},
+        }],
+        tool_calls=[{"toolName": "read_source", "durationMs": 10}],
+    )
+
+    assert report.source_coverage == "full"
+    assert report.validation["errorCode"] == "MODEL_QUOTA_EXCEEDED"
+    assert "квота API исчерпана" in report.summary
+    assert any("API billing" in item for item in report.next_actions)
+
+
 def test_agent_execution_persists_model_usage() -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)

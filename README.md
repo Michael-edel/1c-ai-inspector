@@ -115,6 +115,8 @@ docker compose --env-file .env up --build
 
 При временной ошибке MODEL API adapter делает ограниченный повтор после короткой задержки, не выходя за общий task deadline. Если модель всё равно недоступна после успешного retrieval, failure-report сохраняет фактические `sourceCoverage`, число и длительность MCP-вызовов и сообщает, что исходный код был получен; такой отчёт больше не выглядит как ошибка чтения исходника.
 
+OpenAI `429 insufficient_quota` классифицируется отдельно как `MODEL_QUOTA_EXCEEDED`, не повторяется и показывает действие по проверке API billing/баланса. Обычный rate limit остаётся повторяемой ошибкой `MODEL_RATE_LIMITED`, ошибки авторизации и размера запроса имеют безопасные коды `MODEL_AUTH_FAILED` и `MODEL_REQUEST_TOO_LARGE`; raw ответ провайдера в публичный API не возвращается.
+
 Frontend dependencies не коммитятся; `frontend/package-lock.json` фиксирует версии для повторяемой установки.
 
 В report API и блоке `Execution snapshot` отображаются версии prompt, модели, policy и toolset из неизменяемого execution snapshot задачи; checksums сокращены только визуально, полный JSON доступен через `EXPORT JSON`.

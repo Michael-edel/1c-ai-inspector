@@ -50,6 +50,13 @@ Windows MCP continuity evidence:
 - authenticated local and external bridge health checks both returned HTTP `200` after the scheduled bridge restart;
 - `sales-ai-onec-mcp-cloudflared` is running with Docker restart policy `unless-stopped`, and Docker Desktop is enabled in the Windows Startup registry and application settings.
 
+Off-site backup evidence:
+
+- `scripts/download-production-backups.ps1` downloaded the latest application and Keycloak dumps to `D:\Backups\1c-ai-inspector`;
+- both downloaded files matched the SHA-256 values calculated on the VPS, and no remote staging files remained;
+- `last-success.json` records the verified filenames, hashes, sizes and UTC completion time without storing credentials;
+- Windows task `OneCAIInspector-OffsiteBackup` completed manually with result `0x00000000` and is scheduled daily at 09:00 with `StartWhenAvailable` and three retries.
+
 Commands used:
 
 ```powershell

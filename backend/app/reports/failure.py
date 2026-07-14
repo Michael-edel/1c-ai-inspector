@@ -33,7 +33,13 @@ def normalize_failure_report(
     error_code: str,
     model_name: str = "unknown",
 ) -> dict[str, object]:
-    normalized = build_failure_report(task_id, error_code, model_name).model_dump(by_alias=True)
+    legacy_error_code = payload.get("errorCode") if isinstance(payload, dict) else None
+    effective_error_code = legacy_error_code if isinstance(legacy_error_code, str) else error_code
+    normalized = build_failure_report(
+        task_id,
+        effective_error_code,
+        model_name,
+    ).model_dump(by_alias=True)
     if isinstance(payload, dict):
         normalized.update(payload)
     normalized["taskId"] = task_id
@@ -43,5 +49,5 @@ def normalize_failure_report(
         validation = {}
         normalized["validation"] = validation
     validation.setdefault("readOnly", True)
-    validation.setdefault("errorCode", error_code)
+    validation.setdefault("errorCode", effective_error_code)
     return normalized

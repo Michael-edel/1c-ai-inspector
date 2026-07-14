@@ -119,7 +119,7 @@ def test_task_report_normalizes_legacy_minimal_failure() -> None:
             status="failed",
             request_json="{}",
             result_json=json.dumps({"status": "failed", "errorCode": "MCP_TOOL_CALL_FAILED"}),
-            last_error_code="MCP_TOOL_CALL_FAILED",
+            last_error_code=None,
             available_at=datetime.now(timezone.utc),
         ))
         session.commit()

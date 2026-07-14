@@ -18,7 +18,12 @@ def request(path):
         return json.load(response)
 
 
-health = request("/health")
+def request_with_headers(path):
+    with urllib.request.urlopen(f"{base_url}{path}", timeout=20) as response:
+        return json.load(response), response.headers
+
+
+health, health_headers = request_with_headers("/health")
 readiness = request("/api/v1/system/readiness")
 policy = request("/api/v1/system/policy")
 projects = request("/api/v1/projects")
@@ -28,6 +33,13 @@ published = policy.get("publishedTools", [])
 
 if health.get("status") != "ok":
     raise SystemExit("Production health is not ok")
+if base_url.lower().startswith("https://"):
+    hsts = health_headers.get("Strict-Transport-Security", "")
+    csp = health_headers.get("Content-Security-Policy", "")
+    if "max-age=" not in hsts:
+        raise SystemExit("Missing or invalid Strict-Transport-Security header")
+    if not all(directive in csp for directive in ("default-src 'self'", "frame-ancestors 'none'", "object-src 'none'")):
+        raise SystemExit("Missing or invalid Content-Security-Policy header")
 if readiness.get("status") != "ready":
     raise SystemExit("Production readiness is not ready")
 if len(discovered) < minimum_tools:

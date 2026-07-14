@@ -1,13 +1,21 @@
 {$APP_DOMAIN} {
-    encode gzip
-    header /openapi.json Cache-Control "no-store"
-    reverse_proxy /openapi.json backend:8000
-    reverse_proxy /api/* backend:8000
-    reverse_proxy /health backend:8000
-    reverse_proxy /* frontend:5173
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	header /openapi.json Cache-Control "no-store"
+	reverse_proxy /openapi.json backend:8000
+	reverse_proxy /api/* backend:8000
+	reverse_proxy /health backend:8000
+	reverse_proxy /* frontend:5173
 }
 
 {$IDP_DOMAIN} {
-    encode gzip
-    reverse_proxy keycloak:8080
+	encode gzip
+	reverse_proxy keycloak:8080
 }

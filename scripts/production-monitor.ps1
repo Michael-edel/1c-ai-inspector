@@ -12,6 +12,14 @@ if ($health.status -ne "ok") { throw "Production health is not ok" }
 foreach ($header in @("X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy", "X-Request-ID")) {
     if (-not $healthResponse.Headers[$header]) { throw "Missing security header: $header" }
 }
+if ($base.StartsWith("https://", [System.StringComparison]::OrdinalIgnoreCase)) {
+    $hsts = [string]$healthResponse.Headers["Strict-Transport-Security"]
+    $csp = [string]$healthResponse.Headers["Content-Security-Policy"]
+    if ($hsts -notmatch "(?:^|;)\s*max-age=\d+") { throw "Missing or invalid Strict-Transport-Security header" }
+    if ($csp -notmatch "default-src 'self'" -or $csp -notmatch "frame-ancestors 'none'" -or $csp -notmatch "object-src 'none'") {
+        throw "Missing or invalid Content-Security-Policy header"
+    }
+}
 
 $readiness = Invoke-RestMethod -Uri "$base/api/v1/system/readiness"
 if ($readiness.status -ne "ready") { throw "Production readiness is not ready" }

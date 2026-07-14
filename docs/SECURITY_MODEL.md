@@ -11,7 +11,7 @@ Sandbox Executor v0.3 is a separate feature-flagged trust boundary. When enabled
 ## Trust Boundaries
 
 - **Browser and frontend:** untrusted client. The browser may submit task text and display data, but it cannot grant itself a role or authorize a tool.
-- **Caddy/reverse proxy:** public TLS edge. It routes the application and IdP domains; it is not the application authorization boundary.
+- **Caddy/reverse proxy:** public TLS edge. It routes the application and IdP domains, enforces HSTS and the browser CSP for the Inspector domain, and is not the application authorization boundary.
 - **FastAPI backend:** policy and state-machine boundary. It validates requests, environment, capabilities, execution snapshots and report schemas.
 - **Worker:** execution boundary. It claims tasks transactionally, rechecks readiness, calls only policy-published read-only tools and persists audit facts.
 - **PostgreSQL:** state and audit boundary. `migrate` uses the migration role; backend and worker use the runtime role. Audit tables are append-only for the runtime role.
@@ -38,3 +38,5 @@ Production uses JWT verification through the configured JWKS issuer, including s
 Backend and worker start only after the migration service succeeds. Production PostgreSQL is private to the Compose network, and the public edge exposes only Caddy. Secrets are supplied through environment files or secret management and are checked without printing their values.
 
 Security acceptance must verify readiness, absence of write/conditional-write calls, audit persistence, authorization of metrics and non-root application containers. See [ERROR_MATRIX.md](ERROR_MATRIX.md) for public error and retry behavior.
+
+The production monitor also treats missing HSTS or a CSP without same-origin defaults, framing denial and object denial as a failed HTTPS release. The CSP permits the current Google Fonts stylesheet/font origins; all application scripts, API connections and other resources remain same-origin.

@@ -9,6 +9,14 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$sshOptions = @(
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=15",
+    "-o", "ConnectionAttempts=1",
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=2"
+)
+
 function Quote-ShellArgument {
     param([Parameter(Mandatory)][string]$Value)
     $singleQuote = [string][char]39
@@ -19,7 +27,7 @@ function Quote-ShellArgument {
 
 function Invoke-Ssh {
     param([Parameter(Mandatory)][string]$Command)
-    $output = & ssh -o BatchMode=yes -o ConnectTimeout=15 $SshHost $Command
+    $output = & ssh -n @sshOptions $SshHost $Command
     if ($LASTEXITCODE -ne 0) {
         throw "SSH command failed with exit code $LASTEXITCODE"
     }
@@ -71,7 +79,7 @@ $downloaded = foreach ($line in $metadata) {
 
     Invoke-Ssh $stageCommand | Out-Null
     try {
-        & scp -q -o BatchMode=yes -o ConnectTimeout=15 "${SshHost}:$remoteStaging" $temporary
+        & scp -q @sshOptions "${SshHost}:$remoteStaging" $temporary
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $temporary)) {
             throw "SCP download failed for $name"
         }

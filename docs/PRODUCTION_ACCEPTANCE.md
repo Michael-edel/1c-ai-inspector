@@ -65,6 +65,11 @@ Off-site backup evidence:
 - both downloaded files matched the SHA-256 values calculated on the VPS, and no remote staging files remained;
 - `last-success.json` records the verified filenames, hashes, sizes and UTC completion time without storing credentials;
 - Windows task `OneCAIInspector-OffsiteBackup` completed manually with result `0x00000000` and is scheduled daily at 09:00 with `StartWhenAvailable` and three retries.
+- Cloudflare R2 bucket `onec-ai-inspector-backups` was created in `EEUR` with Standard storage; `r2.dev` is disabled and no custom domain is connected;
+- lifecycle rule `expire-production-backups` expires the `production/` prefix after 30 days, while incomplete multipart uploads expire after 7 days;
+- the full VPS -> local disk -> R2 pipeline uploaded the latest application and Keycloak dumps, downloaded both objects again and matched their SHA-256 values;
+- Windows task `OneCAIInspector-OffsiteBackup` now runs `scripts/offsite-production-backup.ps1`, not the download-only stage; its previous XML definition is retained under `C:\tools\task-backups`;
+- SSH/SCP calls are non-interactive and use bounded connection attempts plus keepalive failure detection so the scheduled pipeline fails instead of hanging indefinitely.
 
 Production checkout evidence:
 

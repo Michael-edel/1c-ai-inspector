@@ -23,3 +23,11 @@ def test_frontend_container_uses_lockfile_and_non_root_user() -> None:
     assert "npm run dev" not in dockerfile
     assert "try_files $uri $uri/ /index.html" in nginx
     assert "proxy_pass http://backend:8000" in nginx
+
+
+def test_linux_operations_scripts_are_exported_with_lf_endings() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert "*.sh text eol=lf" in attributes.splitlines()
+    for script in ROOT.glob("**/*.sh"):
+        assert b"\r\n" not in script.read_bytes(), f"CRLF is not allowed in {script.relative_to(ROOT)}"

@@ -29,6 +29,8 @@ health = json.loads(health_body)
 readiness = request("/api/v1/system/readiness")
 policy = request("/api/v1/system/policy")
 traffic = request("/api/v1/system/traffic")
+costs = request("/api/v1/system/costs")
+cost_estimate = request("/api/v1/system/cost-estimate")
 projects = request("/api/v1/projects")
 history = request("/api/v1/tasks")
 discovered = policy.get("discoveredTools", [])
@@ -64,6 +66,13 @@ if traffic.get("level") not in {"normal", "warning", "critical", "blocked"}:
     raise SystemExit("Production traffic level is invalid")
 if traffic.get("accountedBytes", 0) > traffic.get("hardLimitBytes", 0) or traffic.get("remainingBytes", -1) < 0:
     raise SystemExit("Production traffic counter exceeds its hard limit")
+if costs.get("currency") != "KZT" or costs.get("estimatedCostKzt", -1) < 0 or costs.get("usdKztRate", 0) <= 0:
+    raise SystemExit("Production model cost accounting is invalid")
+pricing = costs.get("pricing", {})
+if (pricing.get("inputPer1M"), pricing.get("cachedInputPer1M"), pricing.get("outputPer1M")) != (5, 0.5, 30):
+    raise SystemExit("Production GPT-5.5 pricing does not match the configured public tariff")
+if cost_estimate.get("currency") != "KZT" or cost_estimate.get("estimateType") != "upper-bound" or cost_estimate.get("estimatedCostKzt", 0) <= 0:
+    raise SystemExit("Production preflight cost confirmation estimate is invalid")
 if len(projects) < 1:
     raise SystemExit("No synchronized projects are available")
 for item in history:
@@ -74,6 +83,7 @@ print(
     "Production monitor passed: "
     f"health=ok readiness=ready discoveredTools={len(discovered)} "
     f"projects={len(projects)} taskHistory={len(history)} "
-    f"traffic={traffic.get('accountedBytes')}/{traffic.get('hardLimitBytes')}."
+    f"traffic={traffic.get('accountedBytes')}/{traffic.get('hardLimitBytes')} "
+    f"modelCostKzt={costs.get('estimatedCostKzt')}."
 )
 PY

@@ -15,6 +15,7 @@ from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
+from app.services.costs import model_request_cost_estimate
 from app.reports.failure import normalize_failure_report
 from app.services.source_retrieval_plan import ensure_full_source_retrieval, query_agent_request_is_supported
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
@@ -30,6 +31,7 @@ class TaskCreateRequest(BaseModel):
     agent_id: str = Field(alias="agentId", min_length=1)
     request: dict[str, object] = Field(default_factory=dict)
     traffic_confirmed: bool = Field(default=False, alias="trafficConfirmed")
+    cost_confirmed: bool = Field(default=False, alias="costConfirmed")
 
 
 class TaskResponse(BaseModel):
@@ -62,6 +64,7 @@ def _persist_task(
 ) -> Task:
     now = datetime.now(timezone.utc)
     task_id = f"tsk_{uuid4().hex}"
+    cost_estimate = model_request_cost_estimate(settings)
     task = Task(
         id=task_id,
         project_id=project.id,
@@ -90,6 +93,10 @@ def _persist_task(
         ),
         available_at=now,
         last_error_code=error_code,
+        cost_confirmed=payload.cost_confirmed,
+        cost_estimate_usd=float(cost_estimate["estimatedCostUsd"]),
+        cost_estimate_kzt=float(cost_estimate["estimatedCostKzt"]),
+        cost_estimate_rate=float(cost_estimate["usdKztRate"]),
     )
     execution_snapshot = PromptExecutionSnapshot(
         id=f"snap_{uuid4().hex}",
@@ -173,6 +180,10 @@ def list_tasks(db: Session = Depends(get_db)) -> list[dict[str, object]]:
             "resultReady": task.result_json is not None,
             "lastErrorCode": task.last_error_code,
             "cancelRequested": task.cancel_requested,
+            "costConfirmed": task.cost_confirmed,
+            "costEstimateUsd": task.cost_estimate_usd,
+            "costEstimateKzt": task.cost_estimate_kzt,
+            "costEstimateRate": task.cost_estimate_rate,
         }
         for task in tasks
     ]
@@ -190,6 +201,10 @@ def task_status(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         "resultReady": task.result_json is not None,
         "lastErrorCode": task.last_error_code,
         "cancelRequested": task.cancel_requested,
+        "costConfirmed": task.cost_confirmed,
+        "costEstimateUsd": task.cost_estimate_usd,
+        "costEstimateKzt": task.cost_estimate_kzt,
+        "costEstimateRate": task.cost_estimate_rate,
     }
 
 
@@ -229,6 +244,12 @@ def create_task(
         db.flush()
 
     settings: Settings = request.app.state.settings
+    cost_estimate = model_request_cost_estimate(settings)
+    if not payload.cost_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "MODEL_COST_CONFIRMATION_REQUIRED", "estimate": cost_estimate},
+        )
     current_traffic = traffic_snapshot(db, settings)
     if current_traffic["level"] == "blocked":
         raise HTTPException(
@@ -380,6 +401,8 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "cachedInputTokens": item.cached_input_tokens,
                 "durationMs": item.duration_ms,
                 "estimatedCost": item.estimated_cost,
+                "estimatedCostKzt": item.estimated_cost_kzt,
+                "usdKztRate": item.usd_kzt_rate,
                 "pricingSource": item.pricing_source,
                 "responseChecksum": item.response_checksum,
                 "requestSizeBytes": item.request_size_bytes,
@@ -434,6 +457,8 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
                 "cachedInputTokens": usage.cached_input_tokens,
                 "durationMs": usage.duration_ms,
                 "estimatedCost": usage.estimated_cost,
+                "estimatedCostKzt": usage.estimated_cost_kzt,
+                "usdKztRate": usage.usd_kzt_rate,
                 "pricingSource": usage.pricing_source,
             }
         )
@@ -444,6 +469,8 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         model_usage.setdefault("cachedInputTokens", 0)
         model_usage.setdefault("durationMs", 0)
         model_usage.setdefault("estimatedCost", 0)
+        model_usage.setdefault("estimatedCostKzt", 0)
+        model_usage.setdefault("usdKztRate", 0)
         model_usage.setdefault("pricingSource", "environment")
     if snapshot is not None:
         report["execution"] = {

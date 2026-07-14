@@ -78,6 +78,7 @@ class OpenAICompatibleAdapter:
                 "model": self.settings.model_name,
                 "messages": messages,
                 "response_format": {"type": "json_object"},
+                "max_completion_tokens": self.settings.model_max_output_tokens,
             }
             if not self.settings.model_name.lower().startswith("gpt-5"):
                 payload["temperature"] = 0

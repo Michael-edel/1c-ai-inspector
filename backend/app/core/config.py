@@ -28,8 +28,15 @@ class Settings(BaseSettings):
     model_name: str = "gpt-5.5"
     model_api_key: str = Field(min_length=1)
     model_api_url: AnyHttpUrl = "https://api.openai.com/v1"
-    model_input_cost_per_1k: float = Field(default=0, ge=0)
-    model_output_cost_per_1k: float = Field(default=0, ge=0)
+    model_input_cost_per_1k: float | None = Field(default=None, ge=0)
+    model_cached_input_cost_per_1k: float | None = Field(default=None, ge=0)
+    model_output_cost_per_1k: float | None = Field(default=None, ge=0)
+    model_max_output_tokens: int = Field(default=16_384, ge=256, le=128_000)
+    model_input_token_estimate_chars: float = Field(default=3.0, gt=0, le=10)
+    model_prompt_overhead_tokens: int = Field(default=4_000, ge=0, le=100_000)
+    usd_kzt_rate: float = Field(default=464.71, gt=0)
+    usd_kzt_rate_date: str = Field(default="2026-07-14", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    usd_kzt_rate_source: str = Field(default="nationalbank.kz", min_length=1, max_length=255)
     model_retries: int = Field(default=1, ge=0, le=3)
     max_tool_calls: int = Field(default=30, ge=1, le=500)
     max_result_chars: int = Field(default=500_000, ge=1_000, le=10_000_000)

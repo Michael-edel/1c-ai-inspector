@@ -4,7 +4,6 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.models import ModelUsage, TaskEvent, ToolCall
-from app.services.costs import estimate_cost
 
 
 class AuditRecorder:
@@ -51,8 +50,9 @@ class AuditRecorder:
         model: str,
         input_tokens: int,
         output_tokens: int,
-        input_cost_per_1k: float,
-        output_cost_per_1k: float,
+        estimated_cost: float,
+        estimated_cost_kzt: float,
+        usd_kzt_rate: float,
         response_checksum: str | None = None,
         cached_input_tokens: int = 0,
         pricing_source: str = "environment",
@@ -73,9 +73,9 @@ class AuditRecorder:
                 response_size_bytes=response_size_bytes,
                 response_checksum=response_checksum,
                 pricing_source=pricing_source,
-                estimated_cost=estimate_cost(
-                    input_tokens, output_tokens, input_cost_per_1k, output_cost_per_1k
-                ),
+                estimated_cost=estimated_cost,
+                estimated_cost_kzt=estimated_cost_kzt,
+                usd_kzt_rate=usd_kzt_rate,
             )
         )
 

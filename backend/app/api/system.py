@@ -12,6 +12,7 @@ from app.api.dependencies import require_identity
 from app.services.auth import AuthContext
 from app.services.mcp_discovery import McpDiscoveryService
 from app.services.capabilities import evaluate_capabilities
+from app.services.costs import model_cost_snapshot, model_request_cost_estimate
 from app.services.diagnostics import build_diagnostics
 from app.services.readiness import ReadinessGate
 from app.services.traffic import traffic_snapshot
@@ -22,6 +23,16 @@ router = APIRouter(prefix="/api/v1/system", tags=["system"])
 @router.get("/traffic")
 def traffic(request: Request, db: Session = Depends(get_db)) -> dict[str, int | str]:
     return traffic_snapshot(db, request.app.state.settings)
+
+
+@router.get("/costs")
+def costs(request: Request, db: Session = Depends(get_db)) -> dict[str, object]:
+    return model_cost_snapshot(db, request.app.state.settings)
+
+
+@router.get("/cost-estimate")
+def cost_estimate(request: Request) -> dict[str, object]:
+    return model_request_cost_estimate(request.app.state.settings)
 
 
 @router.get("/metrics")

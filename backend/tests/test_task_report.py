@@ -104,6 +104,8 @@ def test_task_report_returns_full_persisted_finding() -> None:
         "cachedInputTokens": 3,
         "durationMs": 23,
         "estimatedCost": 0.12,
+        "estimatedCostKzt": 0.0,
+        "usdKztRate": 0.0,
         "pricingSource": "environment",
     }
 

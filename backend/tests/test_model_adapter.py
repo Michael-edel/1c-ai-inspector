@@ -121,6 +121,7 @@ def test_gpt5_adapter_uses_model_default_temperature() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         assert "temperature" not in payload
+        assert payload["max_completion_tokens"] == get_settings().model_max_output_tokens
         return httpx.Response(
             200,
             json={"choices": [{"message": {"content": '{"ok":true}'}}]},

@@ -53,6 +53,10 @@ class Task(TimestampMixin, Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column()
     last_error_code: Mapped[str | None] = mapped_column(String(100))
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    cost_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    cost_estimate_usd: Mapped[float] = mapped_column(nullable=False, default=0, server_default="0")
+    cost_estimate_kzt: Mapped[float] = mapped_column(nullable=False, default=0, server_default="0")
+    cost_estimate_rate: Mapped[float] = mapped_column(nullable=False, default=0, server_default="0")
 
 
 class TaskEvent(TimestampMixin, Base):
@@ -123,6 +127,8 @@ class ModelUsage(TimestampMixin, Base):
     request_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     response_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     estimated_cost: Mapped[float] = mapped_column(nullable=False, default=0)
+    estimated_cost_kzt: Mapped[float] = mapped_column(nullable=False, default=0, server_default="0")
+    usd_kzt_rate: Mapped[float] = mapped_column(nullable=False, default=0, server_default="0")
     pricing_source: Mapped[str] = mapped_column(String(128), nullable=False, default="environment")
     response_checksum: Mapped[str | None] = mapped_column(String(64))
 

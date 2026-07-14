@@ -51,6 +51,8 @@ class ModelUsage(BaseModel):
     cached_input_tokens: int = Field(default=0, alias="cachedInputTokens", ge=0)
     duration_ms: int = Field(default=0, alias="durationMs", ge=0)
     estimated_cost: float = Field(alias="estimatedCost", ge=0)
+    estimated_cost_kzt: float = Field(default=0, alias="estimatedCostKzt", ge=0)
+    usd_kzt_rate: float = Field(default=0, alias="usdKztRate", ge=0)
     pricing_source: str = Field(default="environment", alias="pricingSource", min_length=1)
 
     model_config = ConfigDict(populate_by_name=True)

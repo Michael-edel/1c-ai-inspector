@@ -23,7 +23,7 @@ def test_create_task_persists_task_before_execution_snapshot() -> None:
     state = SimpleNamespace(
         policy_snapshot=snapshot,
         discovered_tools=set(snapshot.published_tools),
-        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+        settings=SimpleNamespace(model_provider="openai", model_name="gpt-5.5", app_environment="sandbox"),
     )
     request = Request({"type": "http", "app": SimpleNamespace(state=state)})
 
@@ -40,10 +40,24 @@ def test_create_task_persists_task_before_execution_snapshot() -> None:
         )
         session.commit()
 
+        with pytest.raises(HTTPException) as cost_error:
+            create_task(
+                TaskCreateRequest(
+                    projectId="prj_demo",
+                    agentId="1c_code_assistant",
+                    request={"text": "inspect"},
+                ),
+                request,
+                session,
+            )
+        assert cost_error.value.detail["code"] == "MODEL_COST_CONFIRMATION_REQUIRED"
+        assert cost_error.value.detail["estimate"]["currency"] == "KZT"
+
         response = create_task(
             TaskCreateRequest(
                 projectId="prj_demo",
                 agentId="1c_code_assistant",
+                costConfirmed=True,
                 request={"text": "inspect"},
             ),
             request,
@@ -68,7 +82,7 @@ def test_create_task_persists_server_enforced_full_source_step() -> None:
     state = SimpleNamespace(
         policy_snapshot=snapshot,
         discovered_tools=set(snapshot.published_tools),
-        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+        settings=SimpleNamespace(model_provider="openai", model_name="gpt-5.5", app_environment="sandbox"),
     )
     request = Request({"type": "http", "app": SimpleNamespace(state=state)})
 
@@ -89,6 +103,7 @@ def test_create_task_persists_server_enforced_full_source_step() -> None:
             TaskCreateRequest(
                 projectId="prj_source_enforcement",
                 agentId="1c_code_assistant",
+                costConfirmed=True,
                 request={
                     "text": "Прочитай модуль документа ЗаказКлиента и найди процедуру ОбработкаЗаполнения",
                     "retrieval": [{"tool": "search_code", "arguments": {"query": "ОбработкаЗаполнения"}}],
@@ -117,7 +132,7 @@ def test_create_task_requires_confirmation_after_traffic_warning() -> None:
         discovered_tools=set(snapshot.published_tools),
         settings=SimpleNamespace(
             model_provider="openai",
-            model_name="test-model",
+            model_name="gpt-5.5",
             app_environment="sandbox",
             traffic_warning_bytes=5_000_000_000,
             traffic_critical_bytes=8_000_000_000,
@@ -142,6 +157,7 @@ def test_create_task_requires_confirmation_after_traffic_warning() -> None:
                 TaskCreateRequest(
                     projectId="prj_traffic_warning",
                     agentId="1c_code_assistant",
+                    costConfirmed=True,
                     request={"text": "inspect"},
                 ),
                 request,
@@ -154,6 +170,7 @@ def test_create_task_requires_confirmation_after_traffic_warning() -> None:
                 projectId="prj_traffic_warning",
                 agentId="1c_code_assistant",
                 trafficConfirmed=True,
+                costConfirmed=True,
                 request={"text": "inspect"},
             ),
             request,
@@ -169,7 +186,7 @@ def test_create_task_blocks_environment_and_records_audit_without_tools() -> Non
     state = SimpleNamespace(
         policy_snapshot=snapshot,
         discovered_tools=set(snapshot.published_tools),
-        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+        settings=SimpleNamespace(model_provider="openai", model_name="gpt-5.5", app_environment="sandbox"),
     )
     request = Request({"type": "http", "app": SimpleNamespace(state=state)})
 
@@ -186,7 +203,7 @@ def test_create_task_blocks_environment_and_records_audit_without_tools() -> Non
 
         with pytest.raises(HTTPException) as error:
             create_task(
-                TaskCreateRequest(projectId="prj_test_environment", agentId="1c_code_assistant", request={"text": "inspect"}),
+                TaskCreateRequest(projectId="prj_test_environment", agentId="1c_code_assistant", costConfirmed=True, request={"text": "inspect"}),
                 request,
                 session,
             )
@@ -208,7 +225,7 @@ def test_create_task_blocks_missing_project_capability() -> None:
     state = SimpleNamespace(
         policy_snapshot=snapshot,
         discovered_tools=set(snapshot.published_tools),
-        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+        settings=SimpleNamespace(model_provider="openai", model_name="gpt-5.5", app_environment="sandbox"),
     )
     request = Request({"type": "http", "app": SimpleNamespace(state=state)})
 
@@ -225,7 +242,7 @@ def test_create_task_blocks_missing_project_capability() -> None:
 
         with pytest.raises(HTTPException) as error:
             create_task(
-                TaskCreateRequest(projectId="prj_missing_capability", agentId="1c_code_assistant", request={"text": "inspect"}),
+                TaskCreateRequest(projectId="prj_missing_capability", agentId="1c_code_assistant", costConfirmed=True, request={"text": "inspect"}),
                 request,
                 session,
             )
@@ -245,7 +262,7 @@ def test_create_task_blocks_plain_language_question_for_query_agent() -> None:
     state = SimpleNamespace(
         policy_snapshot=snapshot,
         discovered_tools=set(snapshot.published_tools),
-        settings=SimpleNamespace(model_provider="openai", model_name="test-model", app_environment="sandbox"),
+        settings=SimpleNamespace(model_provider="openai", model_name="gpt-5.5", app_environment="sandbox"),
     )
     request = Request({"type": "http", "app": SimpleNamespace(state=state)})
 
@@ -265,6 +282,7 @@ def test_create_task_blocks_plain_language_question_for_query_agent() -> None:
                 TaskCreateRequest(
                     projectId="prj_query_guard",
                     agentId="1c_query_agent",
+                    costConfirmed=True,
                     request={
                         "text": "Объясни процедуру РассчитатьСебестоимость",
                         "retrieval": [{"tool": "validate_query", "arguments": {"query": "ВЫБРАТЬ 1"}}],

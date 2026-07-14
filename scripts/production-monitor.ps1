@@ -55,6 +55,18 @@ if ($traffic.accountedBytes -gt $traffic.hardLimitBytes -or $traffic.remainingBy
     throw "Production traffic counter exceeds its hard limit"
 }
 
+$costs = Invoke-RestMethod -Uri "$base/api/v1/system/costs"
+if ($costs.currency -ne "KZT" -or $costs.estimatedCostKzt -lt 0 -or $costs.usdKztRate -le 0) {
+    throw "Production model cost accounting is invalid"
+}
+if ($costs.pricing.inputPer1M -ne 5 -or $costs.pricing.cachedInputPer1M -ne 0.5 -or $costs.pricing.outputPer1M -ne 30) {
+    throw "Production GPT-5.5 pricing does not match the configured public tariff"
+}
+$costEstimate = Invoke-RestMethod -Uri "$base/api/v1/system/cost-estimate"
+if ($costEstimate.currency -ne "KZT" -or $costEstimate.estimateType -ne "upper-bound" -or $costEstimate.estimatedCostKzt -le 0) {
+    throw "Production preflight cost confirmation estimate is invalid"
+}
+
 $projects = Invoke-RestMethod -Uri "$base/api/v1/projects"
 if ($projects.Count -lt 1) { throw "No synchronized projects are available" }
 $history = Invoke-RestMethod -Uri "$base/api/v1/tasks"
@@ -63,4 +75,4 @@ foreach ($forbiddenProperty in @("request", "requestJson", "result", "resultJson
     if ($historyProperties -contains $forbiddenProperty) { throw "Task history exposes forbidden property: $forbiddenProperty" }
 }
 
-Write-Output "Production monitor passed: health=ok readiness=ready discoveredTools=$($discoveredTools.Count) projects=$($projects.Count) taskHistory=$($history.Count) traffic=$($traffic.accountedBytes)/$($traffic.hardLimitBytes)."
+Write-Output "Production monitor passed: health=ok readiness=ready discoveredTools=$($discoveredTools.Count) projects=$($projects.Count) taskHistory=$($history.Count) traffic=$($traffic.accountedBytes)/$($traffic.hardLimitBytes) modelCostKzt=$($costs.estimatedCostKzt)."

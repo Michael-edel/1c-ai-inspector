@@ -14,7 +14,7 @@ from app.reports.failure import build_failure_report
 from app.reports.schema import ModelUsage, StructuredReport, ToolUsage
 from app.services.audit import AuditRecorder
 from app.services.context import ContextBuilder, ContextLimitError
-from app.services.costs import estimate_cost
+from app.services.costs import convert_usd_to_kzt, estimate_cost, resolve_model_pricing
 from app.services.source_retrieval_plan import extract_method_reference
 
 
@@ -364,6 +364,19 @@ def execute_agent(
     next_actions = list(report.next_actions)
     validation = dict(report.validation)
     calls = tool_calls or []
+    try:
+        pricing = resolve_model_pricing(settings)
+    except ValueError as exc:
+        raise AgentExecutionError(str(exc)) from exc
+    estimated_cost = estimate_cost(
+        result.input_tokens,
+        result.output_tokens,
+        pricing.input_cost_per_1k,
+        pricing.output_cost_per_1k,
+        cached_input_tokens=result.cached_input_tokens,
+        cached_input_cost_per_1k=pricing.cached_input_cost_per_1k,
+    )
+    estimated_cost_kzt = convert_usd_to_kzt(estimated_cost, settings.usd_kzt_rate)
     report = report.model_copy(
         update={
             "validation": validation,
@@ -380,12 +393,10 @@ def execute_agent(
                 output_tokens=result.output_tokens,
                 cached_input_tokens=result.cached_input_tokens,
                 duration_ms=model_duration_ms,
-                estimated_cost=estimate_cost(
-                    result.input_tokens,
-                    result.output_tokens,
-                    settings.model_input_cost_per_1k,
-                    settings.model_output_cost_per_1k,
-                ),
+                estimated_cost=estimated_cost,
+                estimated_cost_kzt=estimated_cost_kzt,
+                usd_kzt_rate=settings.usd_kzt_rate,
+                pricing_source=pricing.source,
             ),
         }
     )
@@ -395,11 +406,12 @@ def execute_agent(
         settings.model_name,
         result.input_tokens,
         result.output_tokens,
-        settings.model_input_cost_per_1k,
-        settings.model_output_cost_per_1k,
+        estimated_cost,
+        estimated_cost_kzt,
+        settings.usd_kzt_rate,
         response_checksum=result.response_checksum or hashlib.sha256(result.content.encode("utf-8")).hexdigest(),
         cached_input_tokens=result.cached_input_tokens,
-        pricing_source="environment",
+        pricing_source=pricing.source,
         duration_ms=model_duration_ms,
         request_size_bytes=result.request_size_bytes,
         response_size_bytes=result.response_size_bytes,

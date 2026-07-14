@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.tasks import task_report
-from app.models import Base, Finding, PromptExecutionSnapshot, Task
+from app.models import Base, Finding, ModelUsage, PromptExecutionSnapshot, Task
 
 
 def test_task_report_returns_full_persisted_finding() -> None:
@@ -42,6 +42,17 @@ def test_task_report_returns_full_persisted_finding() -> None:
             policy_version="1.1.0",
             policy_checksum="policy-checksum",
             toolset_checksum="toolset-checksum",
+        ))
+        session.add(ModelUsage(
+            task_id="tsk_report",
+            provider="openai",
+            model="test-model",
+            input_tokens=11,
+            output_tokens=7,
+            cached_input_tokens=3,
+            duration_ms=23,
+            estimated_cost=0.12,
+            pricing_source="environment",
         ))
         session.add(Finding(
             id="fnd_report",
@@ -85,4 +96,13 @@ def test_task_report_returns_full_persisted_finding() -> None:
         "policyVersion": "1.1.0",
         "policyChecksum": "policy-checksum",
         "toolsetChecksum": "toolset-checksum",
+    }
+    assert report["modelUsage"] == {
+        "model": "test-model",
+        "inputTokens": 11,
+        "outputTokens": 7,
+        "cachedInputTokens": 3,
+        "durationMs": 23,
+        "estimatedCost": 0.12,
+        "pricingSource": "environment",
     }

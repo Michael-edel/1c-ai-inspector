@@ -363,7 +363,36 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         .where(Finding.task_id == task_id)
         .order_by(Finding.created_at, Finding.id)
     ).all()
+    usage = db.scalar(
+        select(ModelUsage)
+        .where(ModelUsage.task_id == task_id)
+        .order_by(ModelUsage.created_at.desc())
+    )
     report = json.loads(task.result_json)
+    model_usage = report.get("modelUsage")
+    if not isinstance(model_usage, dict):
+        model_usage = {}
+        report["modelUsage"] = model_usage
+    if usage is not None:
+        model_usage.update(
+            {
+                "model": usage.model,
+                "inputTokens": usage.input_tokens,
+                "outputTokens": usage.output_tokens,
+                "cachedInputTokens": usage.cached_input_tokens,
+                "durationMs": usage.duration_ms,
+                "estimatedCost": usage.estimated_cost,
+                "pricingSource": usage.pricing_source,
+            }
+        )
+    else:
+        model_usage.setdefault("model", snapshot.model_name if snapshot is not None else "unknown")
+        model_usage.setdefault("inputTokens", 0)
+        model_usage.setdefault("outputTokens", 0)
+        model_usage.setdefault("cachedInputTokens", 0)
+        model_usage.setdefault("durationMs", 0)
+        model_usage.setdefault("estimatedCost", 0)
+        model_usage.setdefault("pricingSource", "environment")
     if snapshot is not None:
         report["execution"] = {
             "promptVersion": snapshot.prompt_version,

@@ -30,13 +30,29 @@ function Assert-CompletedReadOnlyTask([string]$TaskId, [string]$Label) {
             throw "$Label task attempted forbidden execute_query"
         }
     }
-    if (@($audit.model_usage).Count -eq 0) {
+    $modelUsage = @($audit.model_usage)
+    if ($modelUsage.Count -eq 0) {
         throw "$Label task has no model usage audit"
+    }
+    foreach ($usage in $modelUsage) {
+        foreach ($property in @("model", "cachedInputTokens", "durationMs", "pricingSource")) {
+            if ($usage.PSObject.Properties.Name -notcontains $property) {
+                throw "$Label model usage is missing $property"
+            }
+        }
+        if ($usage.durationMs -lt 0 -or $usage.cachedInputTokens -lt 0) {
+            throw "$Label model usage contains a negative telemetry value"
+        }
     }
 
     $report = Get-Api "/api/v1/tasks/$TaskId/report"
     if ($report.status -ne "completed") {
         throw "$Label report is not completed: $($report.status)"
+    }
+    foreach ($property in @("model", "cachedInputTokens", "durationMs", "pricingSource")) {
+        if ($report.modelUsage.PSObject.Properties.Name -notcontains $property) {
+            throw "$Label report modelUsage is missing $property"
+        }
     }
     $findings = @($report.findings)
     $persisted = @($report.persistedFindings)

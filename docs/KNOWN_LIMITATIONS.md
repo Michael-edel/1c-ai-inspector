@@ -19,7 +19,7 @@
 - Model cost is an estimate from `MODEL_INPUT_COST_PER_1K` and `MODEL_OUTPUT_COST_PER_1K`. A zero tariff means unknown cost, not free usage.
 - Cached input tokens are recorded when the provider returns them. Existing usage rows are not backfilled.
 - Model duration is measured around the adapter request and existing usage rows receive a zero migration default.
-- Model response checksums, cached token counts and pricing source are recorded for new executions; historical rows may have null or default values from before their migrations.
+- Model response checksums, cached token counts, pricing source and duration are recorded for new executions; report responses backfill model usage fields from the audit row, while historical rows may still have null or default values for fields introduced by earlier migrations.
 - The runtime audit protection is database-role based. Cryptographic chained audit immutability and external WORM storage are outside v0.1.
 
 ## Identity and tenancy

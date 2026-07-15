@@ -11,6 +11,7 @@ from app.mcp.connector import McpConnector, ToolNotAllowedError
 from app.mcp.policy import PolicyProvider
 from app.services.retrieval import (
     RetrievalError,
+    SourcePayloadCache,
     _compact_read_source_output,
     _compact_search_output,
     retrieve_task_context,
@@ -36,6 +37,21 @@ def _compact_snapshot(tmp_path: Path):
         "policyId: compact\nversion: 1.0.0\ntools:\n"
         "  Read Method Source: {name: raw_method, category: bsl.read, mode: read-only, idempotent: true}\n"
         "  Search Code: {name: raw_search, category: code.search, mode: read-only, idempotent: true}\n",
+        encoding="utf-8",
+    )
+    return PolicyProvider(path).load()
+
+
+def _v09_snapshot(tmp_path: Path):
+    path = tmp_path / "v09-policy.yaml"
+    path.write_text(
+        "policyId: v09\nversion: 1.0.0\ntools:\n"
+        "  Resolve Symbol: {name: resolve_symbol, category: code.search, mode: read-only, idempotent: true}\n"
+        "  Get Source Checksum: {name: get_source_checksum, category: bsl.read, mode: read-only, idempotent: true}\n"
+        "  Estimate Tool Payload: {name: estimate_tool_payload, category: bsl.read, mode: read-only, idempotent: true}\n"
+        "  Read Method Source: {name: read_method_source, category: bsl.read, mode: read-only, idempotent: true}\n"
+        "  Find References: {name: find_references, category: references.read, mode: read-only, idempotent: true}\n"
+        "  Search Code: {name: search_code, category: code.search, mode: read-only, idempotent: true}\n",
         encoding="utf-8",
     )
     return PolicyProvider(path).load()
@@ -612,3 +628,173 @@ def test_large_module_is_compacted_before_character_limit(tmp_path: Path) -> Non
     scoped_payload = json.loads(result.context[1]["data"]["content"][0]["text"])
     assert "Возврат 42;" in scoped_payload["source"]
     assert "ОченьБольшойХвост" not in scoped_payload["source"]
+
+
+class V09Connector:
+    def __init__(self, checksum: str = "a" * 64, estimate_bytes: int = 2_000):
+        self.checksum = checksum
+        self.estimate_bytes = estimate_bytes
+        self.calls: list[tuple[str, dict]] = []
+
+    async def call_tool(self, tool_name, arguments, deadline=None):
+        self.calls.append((tool_name, arguments))
+        module = "Документ.ЗаказКлиента.МодульОбъекта"
+        payloads = {
+            "resolve_symbol": {
+                "symbol": "РассчитатьСебестоимость",
+                "matches": [{
+                    "module": module,
+                    "symbol": "РассчитатьСебестоимость",
+                    "kind": "procedure",
+                    "line": 42,
+                }],
+                "count": 1,
+            },
+            "get_source_checksum": {
+                "module": module,
+                "sourceBytes": 1_000,
+                "sourceLines": 80,
+                "sha256": self.checksum,
+            },
+            "estimate_tool_payload": {
+                "tool": "read_method_source",
+                "module": module,
+                "method": "РассчитатьСебестоимость",
+                "sourceBytes": 800,
+                "responseBytes": self.estimate_bytes,
+            },
+            "read_method_source": {
+                "module": module,
+                "method": "РассчитатьСебестоимость",
+                "source": "Процедура РассчитатьСебестоимость()\nКонецПроцедуры",
+                "sourceComplete": True,
+                "sourceScope": "method",
+            },
+            "find_references": {
+                "symbol": "РассчитатьСебестоимость",
+                "references": [{"module": module, "line": 42}],
+                "count": 1,
+            },
+        }
+        payload = payloads[tool_name]
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps(payload, ensure_ascii=False),
+            }],
+            "isError": False,
+        }
+
+
+def _v09_request() -> dict:
+    return {
+        "text": "Объясни процедуру РассчитатьСебестоимость",
+        "retrieval": [{
+            "tool": "resolve_symbol",
+            "arguments": {"symbol": "РассчитатьСебестоимость"},
+        }],
+    }
+
+
+def test_v09_retrieval_runs_preflight_source_and_references(tmp_path: Path) -> None:
+    connector = V09Connector()
+
+    result = asyncio.run(retrieve_task_context(
+        _v09_request(),
+        AgentRegistry().get("1c_code_assistant"),
+        _v09_snapshot(tmp_path),
+        connector,
+        source_cache=SourcePayloadCache(),
+    ))
+
+    assert [name for name, _ in connector.calls] == [
+        "resolve_symbol",
+        "get_source_checksum",
+        "estimate_tool_payload",
+        "read_method_source",
+        "find_references",
+    ]
+    assert [item["tool"] for item in result.context] == [
+        "resolve_symbol",
+        "read_method_source",
+        "find_references",
+    ]
+    assert result.calls[3]["sourceChecksum"] == "a" * 64
+
+
+def test_v09_payload_estimate_blocks_source_read(tmp_path: Path) -> None:
+    connector = V09Connector(estimate_bytes=5_000)
+
+    with pytest.raises(RetrievalError) as error:
+        asyncio.run(retrieve_task_context(
+            _v09_request(),
+            AgentRegistry().get("1c_code_assistant"),
+            _v09_snapshot(tmp_path),
+            connector,
+            max_result_bytes=4_000,
+            source_cache=SourcePayloadCache(),
+        ))
+
+    assert error.value.code == "MCP_RESULT_TOO_LARGE"
+    assert [name for name, _ in connector.calls] == [
+        "resolve_symbol",
+        "get_source_checksum",
+        "estimate_tool_payload",
+    ]
+    assert [call["toolName"] for call in error.value.calls] == [
+        "resolve_symbol",
+        "get_source_checksum",
+        "estimate_tool_payload",
+    ]
+
+
+def test_v09_checksum_cache_avoids_repeated_source_read(tmp_path: Path) -> None:
+    cache = SourcePayloadCache(max_entries=2, max_bytes=100_000)
+    first = V09Connector()
+    second = V09Connector()
+    snapshot = _v09_snapshot(tmp_path)
+
+    asyncio.run(retrieve_task_context(
+        _v09_request(),
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        first,
+        source_cache=cache,
+    ))
+    result = asyncio.run(retrieve_task_context(
+        _v09_request(),
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        second,
+        source_cache=cache,
+    ))
+
+    assert "read_method_source" not in [name for name, _ in second.calls]
+    cached_call = next(call for call in result.calls if call.get("cacheHit"))
+    assert cached_call["toolName"] == "read_method_source"
+    assert cached_call["requestSizeBytes"] == 0
+    assert cached_call["resultSizeBytes"] == 0
+
+
+def test_v09_checksum_change_invalidates_source_cache(tmp_path: Path) -> None:
+    cache = SourcePayloadCache(max_entries=2, max_bytes=100_000)
+    snapshot = _v09_snapshot(tmp_path)
+
+    asyncio.run(retrieve_task_context(
+        _v09_request(),
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        V09Connector(checksum="a" * 64),
+        source_cache=cache,
+    ))
+    changed = V09Connector(checksum="b" * 64)
+    result = asyncio.run(retrieve_task_context(
+        _v09_request(),
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        changed,
+        source_cache=cache,
+    ))
+
+    assert "read_method_source" in [name for name, _ in changed.calls]
+    assert not any(call.get("cacheHit") for call in result.calls)

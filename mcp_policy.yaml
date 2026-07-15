@@ -1,5 +1,5 @@
 policyId: edt-mcp-default
-version: 1.4.0
+version: 1.4.1
 tools:
   bsl_syntax_help:
     name: bsl_syntax_help

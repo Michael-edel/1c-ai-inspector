@@ -117,10 +117,10 @@ def test_create_task_persists_server_enforced_full_source_step() -> None:
         assert persisted is not None
         retrieval = json.loads(persisted.request_json)["retrieval"]
         assert retrieval[0] == {
-            "tool": "read_method_source",
+            "tool": "resolve_symbol",
             "arguments": {
+                "symbol": "ОбработкаЗаполнения",
                 "module": "Документ.ЗаказКлиента.МодульОбъекта",
-                "method": "ОбработкаЗаполнения",
             },
         }
         assert retrieval[1] == {

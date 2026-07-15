@@ -144,8 +144,11 @@ def record_retrieval_calls(
     if lease_owner is not None:
         assert_task_lease(session, task_id, lease_owner, lock=True)
     reused_count = 0
+    source_cache_count = 0
     for call in calls:
-        if call.get("reused"):
+        if call.get("cacheHit"):
+            source_cache_count += 1
+        elif call.get("reused"):
             reused_count += 1
         if call.get("persisted") or call.get("reused"):
             continue
@@ -167,6 +170,12 @@ def record_retrieval_calls(
             task_id,
             "tool_call_reused",
             {"count": reused_count, "reason": "IDEMPOTENT_RETRY"},
+        )
+    if source_cache_count:
+        AuditRecorder(session).record_event(
+            task_id,
+            "tool_call_reused",
+            {"count": source_cache_count, "reason": "SOURCE_CHECKSUM_CACHE"},
         )
 
 

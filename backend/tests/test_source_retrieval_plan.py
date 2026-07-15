@@ -7,6 +7,12 @@ from app.services.source_retrieval_plan import (
 
 PUBLISHED_TOOLS = {"read_source", "search_code", "get_object_structure"}
 COMPACT_TOOLS = PUBLISHED_TOOLS | {"read_method_source", "get_edt_metadata_summary"}
+V09_TOOLS = COMPACT_TOOLS | {
+    "resolve_symbol",
+    "find_references",
+    "get_source_checksum",
+    "estimate_tool_payload",
+}
 
 
 def test_code_assistant_receives_full_document_module_before_search() -> None:
@@ -132,6 +138,59 @@ def test_method_and_object_use_compact_source_and_metadata() -> None:
             },
         },
         {"tool": "get_edt_metadata_summary", "arguments": {"objectType": "Документ", "name": "ЗаказКлиента"}},
+    ]
+
+
+def test_v09_method_only_request_starts_with_symbol_resolution() -> None:
+    request = {
+        "text": "Объясни, какую бизнес-логику реализует процедура РассчитатьСебестоимость.",
+        "retrieval": [
+            {"tool": "search_code", "arguments": {"query": "полный вопрос"}},
+            {"tool": "bsl_syntax_help", "arguments": {"query": "процедура"}},
+        ],
+    }
+
+    normalized = ensure_full_source_retrieval(
+        request,
+        "1c_code_assistant",
+        V09_TOOLS | {"bsl_syntax_help"},
+    )
+
+    assert normalized["retrieval"] == [
+        {
+            "tool": "resolve_symbol",
+            "arguments": {"symbol": "РассчитатьСебестоимость"},
+        }
+    ]
+
+
+def test_v09_known_object_scopes_symbol_and_keeps_compact_metadata() -> None:
+    request = {
+        "text": "Объясни процедуру ОбработкаЗаполнения документа ЗаказКлиента",
+        "retrieval": [
+            {"tool": "read_source", "arguments": {"module": "старый"}},
+            {"tool": "get_object_structure", "arguments": {"object": "старый"}},
+        ],
+    }
+
+    normalized = ensure_full_source_retrieval(
+        request,
+        "1c_code_assistant",
+        V09_TOOLS,
+    )
+
+    assert normalized["retrieval"] == [
+        {
+            "tool": "resolve_symbol",
+            "arguments": {
+                "symbol": "ОбработкаЗаполнения",
+                "module": "Документ.ЗаказКлиента.МодульОбъекта",
+            },
+        },
+        {
+            "tool": "get_edt_metadata_summary",
+            "arguments": {"objectType": "Документ", "name": "ЗаказКлиента"},
+        },
     ]
 
 

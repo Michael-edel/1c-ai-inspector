@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" format="Hierarchical" version="2.10">
+	<ConfigVersions>
+		<Metadata name="Configuration.MCP_HTTPService" id="a433a1ba-b9a1-44df-b501-26612e947f96" configVersion="154cf64d0c0ad9f203eb76545d5bea4c9b252a75"/>
+		<Metadata name="HTTPService.MCPService" id="93b52b96-1872-4900-931f-30f172dcdeed" configVersion="ca9592e6aff89ccc175917cf27e1eb6e13477071">
+			<Metadata name="HTTPService.MCPService.URLTemplate.Метаданные" id="4959a157-4c22-4802-b76b-d4ba8ff3752f"/>
+			<Metadata name="HTTPService.MCPService.URLTemplate.Объект.Method.Получить" id="4e83c9ef-4495-4d42-bbbb-1cfd43923366"/>
+			<Metadata name="HTTPService.MCPService.URLTemplate.Объект" id="d13eb4cf-e792-41e6-b13a-4ea40b45ea99"/>
+			<Metadata name="HTTPService.MCPService.URLTemplate.Метаданные.Method.Получить" id="dfc323e9-33e4-49a0-b3f5-7264cb26003d"/>
+		</Metadata>
+		<Metadata name="HTTPService.MCPService.Module" id="93b52b96-1872-4900-931f-30f172dcdeed.0" configVersion="056246347728d0954eeaae6054aff7f6976d910e"/>
+		<Metadata name="Language.Русский" id="74817ceb-8e8a-4e84-bcb4-106440bf08ab" configVersion="0e2d4c934e5b376ba3ffc9c54d134acfa17c9e2d"/>
+		<Metadata name="Role.MCP_ОсновнаяРоль" id="a7181713-3c5f-4b0c-9d2a-ab9998503308" configVersion="5e1be1018ab164bd3a0d59c7538e13b8f30af709"/>
+	</ConfigVersions>
+</ConfigDumpInfo>

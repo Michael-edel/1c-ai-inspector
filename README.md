@@ -2,6 +2,12 @@
 
 Read-only web-приложение для анализа кода 1С через EDT MCP Server.
 
+Проверенная сборка расширения `MCP HTTPService 0.9.0` находится в
+[`integrations/mcp-httpservice`](integrations/mcp-httpservice/README.md). Она
+основана на совместимом с установленным runtime `mcp-1c v1.8.4`, явно показывает
+версию в списке расширений и через HTTP endpoint `/version`, сохраняет исходный
+read-only контракт и собирается только через отдельную базу на диске `D:`.
+
 Документы контура: [Backlog v0.2](docs/BACKLOG_V0.2.md), [Backlog v0.3](docs/BACKLOG_V0.3.md), [Security Model](docs/SECURITY_MODEL.md), [Architecture Overview](docs/ARCHITECTURE.md), [Known Limitations](docs/KNOWN_LIMITATIONS.md) и [матрица ошибок](docs/ERROR_MATRIX.md).
 
 Текущий этап v0.7 завершает feature-flagged Sandbox Executor v0.3 поверх proposal-only Patch Planner. Основной production-контур остается read-only и не публикует sandbox routes; в отдельном локальном контуре verified owner может применить approved signed package только к disposable Git worktree, выполнить фиксированные validation/test команды и затем вручную очистить branch/worktree через rollback.

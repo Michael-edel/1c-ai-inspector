@@ -15,7 +15,7 @@ from app.agents.registry import AgentRegistry
 from app.models import Agent, Finding, ModelUsage, Project, PromptExecutionSnapshot, Task, TaskEvent, ToolCall
 from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
-from app.services.costs import model_request_cost_estimate
+from app.services.costs import model_request_cost_estimate, round_kzt
 from app.reports.failure import normalize_failure_report
 from app.services.source_retrieval_plan import ensure_full_source_retrieval, query_agent_request_is_supported
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
@@ -182,7 +182,7 @@ def list_tasks(db: Session = Depends(get_db)) -> list[dict[str, object]]:
             "cancelRequested": task.cancel_requested,
             "costConfirmed": task.cost_confirmed,
             "costEstimateUsd": task.cost_estimate_usd,
-            "costEstimateKzt": task.cost_estimate_kzt,
+            "costEstimateKzt": round_kzt(task.cost_estimate_kzt),
             "costEstimateRate": task.cost_estimate_rate,
         }
         for task in tasks
@@ -203,7 +203,7 @@ def task_status(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         "cancelRequested": task.cancel_requested,
         "costConfirmed": task.cost_confirmed,
         "costEstimateUsd": task.cost_estimate_usd,
-        "costEstimateKzt": task.cost_estimate_kzt,
+        "costEstimateKzt": round_kzt(task.cost_estimate_kzt),
         "costEstimateRate": task.cost_estimate_rate,
     }
 
@@ -401,7 +401,7 @@ def task_audit(task_id: str, db: Session = Depends(get_db)) -> TaskAuditResponse
                 "cachedInputTokens": item.cached_input_tokens,
                 "durationMs": item.duration_ms,
                 "estimatedCost": item.estimated_cost,
-                "estimatedCostKzt": item.estimated_cost_kzt,
+                "estimatedCostKzt": round_kzt(item.estimated_cost_kzt),
                 "usdKztRate": item.usd_kzt_rate,
                 "pricingSource": item.pricing_source,
                 "responseChecksum": item.response_checksum,
@@ -457,7 +457,7 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
                 "cachedInputTokens": usage.cached_input_tokens,
                 "durationMs": usage.duration_ms,
                 "estimatedCost": usage.estimated_cost,
-                "estimatedCostKzt": usage.estimated_cost_kzt,
+                "estimatedCostKzt": round_kzt(usage.estimated_cost_kzt),
                 "usdKztRate": usage.usd_kzt_rate,
                 "pricingSource": usage.pricing_source,
             }
@@ -472,6 +472,7 @@ def task_report(task_id: str, db: Session = Depends(get_db)) -> dict[str, object
         model_usage.setdefault("estimatedCostKzt", 0)
         model_usage.setdefault("usdKztRate", 0)
         model_usage.setdefault("pricingSource", "environment")
+    model_usage["estimatedCostKzt"] = round_kzt(float(model_usage.get("estimatedCostKzt") or 0))
     if snapshot is not None:
         report["execution"] = {
             "promptVersion": snapshot.prompt_version,

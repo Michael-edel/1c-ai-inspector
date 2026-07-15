@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 
 from sqlalchemy import func, select
@@ -97,10 +98,17 @@ def estimate_cost(
     )
 
 
-def convert_usd_to_kzt(cost_usd: float, rate: float) -> float:
+def round_kzt(value: float) -> int:
+    if value < 0:
+        raise ValueError("KZT amount cannot be negative")
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def convert_usd_to_kzt(cost_usd: float, rate: float) -> int:
     if min(cost_usd, rate) < 0:
         raise ValueError("cost and exchange rate cannot be negative")
-    return round(cost_usd * rate, 4)
+    amount = Decimal(str(cost_usd)) * Decimal(str(rate))
+    return int(amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def model_request_cost_estimate(settings: Settings) -> dict[str, object]:
@@ -154,7 +162,7 @@ def model_cost_snapshot(db: Session, settings: Settings) -> dict[str, object]:
         "outputTokens": int(row[3]),
         "estimatedCost": round(float(row[4]), 8),
         "estimatedCostUsd": round(float(row[4]), 8),
-        "estimatedCostKzt": round(float(row[5]), 4),
+        "estimatedCostKzt": round_kzt(float(row[5])),
         "usdKztRate": settings.usd_kzt_rate,
         "rateDate": settings.usd_kzt_rate_date,
         "rateSource": settings.usd_kzt_rate_source,

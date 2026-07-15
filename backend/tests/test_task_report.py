@@ -52,6 +52,7 @@ def test_task_report_returns_full_persisted_finding() -> None:
             cached_input_tokens=3,
             duration_ms=23,
             estimated_cost=0.12,
+            estimated_cost_kzt=10.5,
             pricing_source="environment",
         ))
         session.add(Finding(
@@ -104,7 +105,7 @@ def test_task_report_returns_full_persisted_finding() -> None:
         "cachedInputTokens": 3,
         "durationMs": 23,
         "estimatedCost": 0.12,
-        "estimatedCostKzt": 0.0,
+        "estimatedCostKzt": 11,
         "usdKztRate": 0.0,
         "pricingSource": "environment",
     }

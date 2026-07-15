@@ -56,7 +56,7 @@ const formatTaskTime = (value: string) => new Date(value).toLocaleString();
 const formatBytes = (value: number) => value >= 1_000_000_000 ? `${(value / 1_000_000_000).toFixed(2)} GB` : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)} MB` : value >= 1_000 ? `${(value / 1_000).toFixed(1)} KB` : `${value} B`;
 const formatUsd = (value: number, minimumFractionDigits = 4) => `${value.toLocaleString("en-US", { minimumFractionDigits, maximumFractionDigits: 8 })}`;
 const formatTokens = (value: number) => value.toLocaleString("ru-RU");
-const formatKzt = (value: number) => `${value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ₸`;
+const formatKzt = (value: number) => `${Math.round(value).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₸`;
 const extractObjectReference = (text: string) => {
   const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)(?:\s+сведени[йя])?\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
   if (!match) return null;

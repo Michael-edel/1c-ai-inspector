@@ -32,6 +32,7 @@ def test_task_history_returns_safe_metadata_only() -> None:
             result_json='{"summary":"private result"}',
             available_at=created_at,
             last_error_code=None,
+            cost_estimate_kzt=10.5,
         ))
         session.commit()
 
@@ -52,7 +53,7 @@ def test_task_history_returns_safe_metadata_only() -> None:
         "cancelRequested": False,
         "costConfirmed": False,
         "costEstimateUsd": 0.0,
-        "costEstimateKzt": 0.0,
+        "costEstimateKzt": 11,
         "costEstimateRate": 0.0,
     }]
     assert "private request" not in str(history)

@@ -11,6 +11,7 @@ from app.services.costs import (
     model_cost_snapshot,
     model_request_cost_estimate,
     resolve_model_pricing,
+    round_kzt,
 )
 
 
@@ -21,6 +22,12 @@ def test_estimate_cost() -> None:
 def test_negative_cost_inputs_are_rejected() -> None:
     with pytest.raises(ValueError):
         estimate_cost(-1, 0, 0, 0)
+
+
+def test_kzt_amounts_use_financial_whole_tenge_rounding() -> None:
+    assert round_kzt(10.49) == 10
+    assert round_kzt(10.5) == 11
+    assert convert_usd_to_kzt(0.105, 100) == 11
 
 
 def test_estimate_cost_separates_cached_input_tokens() -> None:
@@ -85,7 +92,7 @@ def test_official_gpt56_luna_pricing_and_kzt_upper_bound() -> None:
     assert pricing.source == "openai-public:gpt-5.6-luna:2026-07-14"
     assert estimate["inputTokens"] == 44_000
     assert estimate["estimatedCostUsd"] == 0.142304
-    assert estimate["estimatedCostKzt"] == 66.1301
+    assert estimate["estimatedCostKzt"] == 66
 
 
 def test_incomplete_environment_pricing_is_rejected() -> None:
@@ -135,4 +142,4 @@ def test_monthly_cost_snapshot_reports_kzt_and_token_totals() -> None:
     assert snapshot["inputTokens"] == 1000
     assert snapshot["cachedInputTokens"] == 400
     assert snapshot["outputTokens"] == 500
-    assert snapshot["estimatedCostKzt"] == 8.4577
+    assert snapshot["estimatedCostKzt"] == 8

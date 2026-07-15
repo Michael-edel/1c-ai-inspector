@@ -11,7 +11,7 @@ from app.agents.registry import AgentRegistry
 from app.core.config import get_settings
 from app.modeling import ModelResult
 from app.models import Base, ModelUsage, Task
-from app.services.costs import resolve_model_pricing
+from app.services.costs import convert_usd_to_kzt, resolve_model_pricing
 
 
 class FakeAdapter:
@@ -194,7 +194,9 @@ def test_agent_execution_persists_model_usage() -> None:
         assert usage.duration_ms >= 0
         assert usage.pricing_source == resolve_model_pricing(get_settings()).source
         assert usage.estimated_cost > 0
-        assert usage.estimated_cost_kzt > 0
+        assert usage.estimated_cost_kzt == convert_usd_to_kzt(
+            usage.estimated_cost, usage.usd_kzt_rate
+        )
         assert usage.usd_kzt_rate == get_settings().usd_kzt_rate
         expected_content = FakeAdapter().complete([{
             "role": "user",

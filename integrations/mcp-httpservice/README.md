@@ -13,7 +13,9 @@ on the `mcp-1c` `v1.8.4` source that matches the deployed `mcp-1c.exe`.
 
 ## Artifact
 
-`dist/MCP_HTTPService_0.9.0.cfe`
+`dist/MCP_HTTPService_0.9.0.cfe` is intentionally tracked in Git despite the
+repository-wide `*.cfe` ignore rule, so the verified release can be installed
+without rebuilding it.
 
 SHA-256:
 

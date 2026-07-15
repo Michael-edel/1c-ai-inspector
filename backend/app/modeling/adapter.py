@@ -151,18 +151,24 @@ class OpenAICompatibleAdapter:
                 self.traffic_controller.finalize(reservation, request_size_bytes)
             status_code = exc.response.status_code
             error_code = None
+            error_type = None
             try:
                 error_payload = exc.response.json().get("error", {})
                 if isinstance(error_payload, dict):
                     error_code = error_payload.get("code")
+                    error_type = error_payload.get("type")
             except (TypeError, ValueError):
                 pass
             if status_code == 429 and error_code == "insufficient_quota":
                 raise ModelError("MODEL_QUOTA_EXCEEDED") from exc
             if status_code == 429:
                 raise _RetryableModelError("MODEL_RATE_LIMITED") from exc
-            if status_code in {401, 403}:
+            if status_code in {401, 403} and (
+                error_code == "invalid_api_key" or error_type == "authentication_error"
+            ):
                 raise ModelError("MODEL_AUTH_FAILED") from exc
+            if status_code in {401, 403}:
+                raise _RetryableModelError("MODEL_AUTH_FAILED") from exc
             if status_code == 413:
                 raise ModelError("MODEL_REQUEST_TOO_LARGE") from exc
             if status_code >= 500:

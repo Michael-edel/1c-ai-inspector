@@ -117,6 +117,55 @@ def test_openai_compatible_adapter_does_not_retry_exhausted_quota(monkeypatch) -
     assert attempts == 1
 
 
+def test_openai_compatible_adapter_retries_code_less_auth_rejection(monkeypatch) -> None:
+    attempts = 0
+    delays: list[float] = []
+    monkeypatch.setattr(time, "sleep", delays.append)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(
+                401,
+                json={"error": {"type": "invalid_request_error", "code": None}},
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"ok":true}'}}]},
+        )
+
+    settings = get_settings().model_copy(update={"model_retries": 1})
+    result = OpenAICompatibleAdapter(
+        settings, transport=httpx.MockTransport(handler)
+    ).complete([])
+
+    assert json.loads(result.content) == {"ok": True}
+    assert attempts == 2
+    assert delays == [1]
+
+
+def test_openai_compatible_adapter_does_not_retry_invalid_api_key(monkeypatch) -> None:
+    attempts = 0
+    monkeypatch.setattr(time, "sleep", lambda _: pytest.fail("invalid key must not retry"))
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            401,
+            json={"error": {"type": "invalid_request_error", "code": "invalid_api_key"}},
+        )
+
+    settings = get_settings().model_copy(update={"model_retries": 2})
+    with pytest.raises(ModelError, match="MODEL_AUTH_FAILED"):
+        OpenAICompatibleAdapter(
+            settings, transport=httpx.MockTransport(handler)
+        ).complete([])
+
+    assert attempts == 1
+
+
 def test_gpt5_adapter_uses_model_default_temperature() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)

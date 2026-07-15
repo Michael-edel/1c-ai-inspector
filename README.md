@@ -117,6 +117,8 @@ docker compose --env-file .env up --build
 
 OpenAI `429 insufficient_quota` классифицируется отдельно как `MODEL_QUOTA_EXCEEDED`, не повторяется и показывает действие по проверке API billing/баланса. Обычный rate limit остаётся повторяемой ошибкой `MODEL_RATE_LIMITED`, ошибки авторизации и размера запроса имеют безопасные коды `MODEL_AUTH_FAILED` и `MODEL_REQUEST_TOO_LARGE`; raw ответ провайдера в публичный API не возвращается.
 
+Кратковременный ответ OpenAI `401/403` без явного `invalid_api_key` или `authentication_error` повторяется в пределах `MODEL_RETRIES`: это защищает задачу от единичного сбоя авторизационного шлюза после обновления billing. Явно недействительный API-ключ не повторяется и сразу завершает задачу с `MODEL_AUTH_FAILED`.
+
 Frontend dependencies не коммитятся; `frontend/package-lock.json` фиксирует версии для повторяемой установки.
 
 В report API и блоке `Execution snapshot` отображаются версии prompt, модели, policy и toolset из неизменяемого execution snapshot задачи; checksums сокращены только визуально, полный JSON доступен через `EXPORT JSON`.

@@ -67,10 +67,10 @@ const extractObjectReference = (text: string) => {
     category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
   };
 };
-const extractMethodReference = (text: string) => text.match(/\b(?:процедур\w*|функци\w*|метод\w*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)\b/i)?.[1] ?? null;
-const extractQueryText = (text: string) => text.match(/(?:^|[\r\n:])\s*(ВЫБРАТЬ\b[\s\S]*)/i)?.[1].replace(/```\s*$/, "").trim() ?? null;
+const extractMethodReference = (text: string) => text.match(/(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:процедур[A-Za-zА-Яа-яЁё0-9_]*|функци[A-Za-zА-Яа-яЁё0-9_]*|метод[A-Za-zА-Яа-яЁё0-9_]*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i)?.[1] ?? null;
+const extractQueryText = (text: string) => text.match(/(?:^|[\r\n:])\s*(ВЫБРАТЬ(?![A-Za-zА-Яа-яЁё0-9_])[\s\S]*)/i)?.[1].replace(/```\s*$/, "").trim() ?? null;
 const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
-const isAuditRequest = (text: string) => /\b(аудит\w*|audit|finding\w*|потенциальн\w*\s+ошиб\w*|небезопасн\w*\s+мест\w*)\b/i.test(text);
+const isAuditRequest = (text: string) => /(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:аудит[A-Za-zА-Яа-яЁё0-9_]*|audit|finding[A-Za-zА-Яа-яЁё0-9_]*|потенциальн[A-Za-zА-Яа-яЁё0-9_]*\s+ошиб[A-Za-zА-Яа-яЁё0-9_]*|небезопасн[A-Za-zА-Яа-яЁё0-9_]*\s+мест[A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
 const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: string[] = []) => {
   const query = text.trim();

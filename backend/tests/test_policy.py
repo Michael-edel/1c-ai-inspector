@@ -7,7 +7,7 @@ from app.mcp.policy import PolicyError, PolicyProvider
 
 def test_bridge_policy_is_read_only() -> None:
     snapshot = PolicyProvider(Path(__file__).parents[2] / "mcp_policy.yaml").load()
-    assert snapshot.policy.version == "1.3.0"
+    assert snapshot.policy.version == "1.3.1"
     assert set(snapshot.published_tools) == {
         "bsl_syntax_help",
         "get_configuration_info",
@@ -22,6 +22,8 @@ def test_bridge_policy_is_read_only() -> None:
     }
     assert "execute_query" not in snapshot.published_tools
     assert "get_event_log" not in snapshot.published_tools
+    assert snapshot.published_tools["validate_query"].idempotent is True
+    assert snapshot.published_tools["validate_query"].retries == 1
     assert len(snapshot.checksum) == 64
     assert len(snapshot.toolset_checksum) == 64
 

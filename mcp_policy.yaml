@@ -1,5 +1,5 @@
 policyId: edt-mcp-default
-version: 1.3.0
+version: 1.3.1
 tools:
   bsl_syntax_help:
     name: bsl_syntax_help
@@ -41,3 +41,4 @@ tools:
     name: validate_query
     category: query.validate
     mode: read-only
+    retries: 1

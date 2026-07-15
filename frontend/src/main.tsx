@@ -144,6 +144,8 @@ const publicErrorMessages: Record<string, string> = {
   MONTHLY_TRAFFIC_LIMIT_EXCEEDED: "Работа остановлена: месячный лимит трафика 9,8 GB достигнут.",
   AGENT_REQUEST_NOT_SUPPORTED: "1C Query Agent принимает только запросы 1С, содержащие текст начиная с ВЫБРАТЬ. Для вопросов по процедурам выберите 1C Code Assistant.",
   SOURCE_CONTEXT_INSUFFICIENT: "Проверенный ответ не сформирован: Inspector не смог получить полный исходный модуль с запрошенной процедурой.",
+  METHOD_DECLARATION_NOT_FOUND: "Объявление запрошенной процедуры или функции не найдено. Проверьте точное имя, объект и модуль.",
+  METHOD_DECLARATION_AMBIGUOUS: "Найдено несколько одноименных процедур или функций. Укажите точный объект и модуль.",
   MCP_TOOL_CALL_FAILED: "MCP не выполнил read-only вызов. Проверьте доступность локального 1С bridge и повторите задачу.",
   MODEL_RESPONSE_TOO_LARGE: "Ответ модели превысил разрешенный размер и был остановлен.",
   PATCH_TASK_NOT_COMPLETED: "Finding можно использовать только из завершенной задачи.",

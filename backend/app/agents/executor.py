@@ -146,6 +146,49 @@ def _source_contains_method(documents: dict[str, str], method: str) -> bool:
     return any(declaration.search(source) is not None for source in documents.values())
 
 
+def _search_method_modules(
+    extra_context: list[dict[str, object]] | None,
+    method: str,
+) -> tuple[bool, list[str], list[str]]:
+    declaration = re.compile(
+        rf"^[ \t]*(?:Процедура|Функция)[ \t]+{re.escape(method)}[ \t]*\(",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    search_completed = False
+    matched_modules: set[str] = set()
+    declaration_modules: set[str] = set()
+    for item in extra_context or []:
+        if item.get("tool") != "search_code":
+            continue
+        data = item.get("data")
+        if not isinstance(data, dict):
+            continue
+        search_completed = True
+        content = data.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                continue
+            sections = re.split(r"(?=^###[ \t]+)", block["text"], flags=re.MULTILINE)
+            for section in sections:
+                lines = section.splitlines()
+                if not lines or not lines[0].startswith("###"):
+                    continue
+                module = re.sub(
+                    r"[ \t]+\((?:строка|line)[ \t]+\d+\)[ \t]*$",
+                    "",
+                    lines[0][3:].strip(),
+                    flags=re.IGNORECASE,
+                )
+                if not module:
+                    continue
+                matched_modules.add(module)
+                if declaration.search(section):
+                    declaration_modules.add(module)
+    return search_completed, sorted(matched_modules), sorted(declaration_modules)
+
+
 def _normalized_evidence_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.replace("\r\n", "\n")).strip()
 
@@ -280,6 +323,14 @@ def execute_agent(
     source_coverage = _source_coverage(extra_context)
     requested_method = extract_method_reference(request)
     source_documents = _source_documents(extra_context)
+    search_completed = False
+    matched_modules: list[str] = []
+    declaration_modules: list[str] = []
+    if requested_method:
+        search_completed, matched_modules, declaration_modules = _search_method_modules(
+            extra_context,
+            requested_method,
+        )
     method_source_missing = (
         requested_method is not None
         and definition.code in {"1c_code_assistant", "1c_audit_agent"}
@@ -290,31 +341,57 @@ def execute_agent(
     ) or method_source_missing
     if source_context_insufficient:
         calls = tool_calls or []
+        error_code = "SOURCE_CONTEXT_INSUFFICIENT"
+        summary = "Не удалось сформировать проверенный ответ: полный исходный код запрошенного модуля не получен."
+        next_action = "Уточнить объект или модуль процедуры и повторить задачу после доступного read-only source-инструмента."
         limitation = (
             "Полный исходный текст модуля не получен; частичные результаты search_code не являются достаточным evidence."
             if source_coverage == "partial"
             else "MCP не вернул полный исходный текст запрошенного модуля."
         )
+        validation: dict[str, object] = {
+            "readOnly": True,
+            "errorCode": error_code,
+            "requestedMethod": requested_method,
+        }
+        if method_source_missing and search_completed and not declaration_modules:
+            error_code = "METHOD_DECLARATION_NOT_FOUND"
+            summary = (
+                f"Объявление процедуры или функции {requested_method} не найдено "
+                "в выгруженном исходном коде."
+            )
+            limitation = (
+                "search_code нашел только употребления имени, но не точное объявление "
+                f"Процедура {requested_method}(...) или Функция {requested_method}(...)."
+                if matched_modules
+                else "search_code не нашел ни объявления, ни употреблений запрошенного имени."
+            )
+            next_action = "Проверить точное имя процедуры или указать объект и модуль, где она объявлена."
+            validation["matchedModules"] = matched_modules
+        elif method_source_missing and len(declaration_modules) > 1:
+            error_code = "METHOD_DECLARATION_AMBIGUOUS"
+            summary = (
+                f"Найдено несколько объявлений {requested_method}; без точного объекта "
+                "или модуля нельзя выбрать проверенный исходник."
+            )
+            limitation = "Inspector не выбирает один из нескольких модулей без подтверждения пользователя."
+            next_action = "Указать точный объект и модуль процедуры, затем повторить задачу."
+            validation["candidateModules"] = declaration_modules
+        validation["errorCode"] = error_code
         return build_failure_report(
             task.id,
-            "SOURCE_CONTEXT_INSUFFICIENT",
+            error_code,
             settings.model_name,
         ).model_copy(update={
-            "summary": "Не удалось сформировать проверенный ответ: полный исходный код запрошенного модуля не получен.",
-            "validation": {
-                "readOnly": True,
-                "errorCode": "SOURCE_CONTEXT_INSUFFICIENT",
-                "requestedMethod": requested_method,
-            },
+            "summary": summary,
+            "validation": validation,
             "source_coverage": source_coverage,
             "tool_usage": ToolUsage(
                 calls=len(calls),
                 duration_ms=sum(int(call.get("durationMs") or 0) for call in calls),
             ),
             "limitations": [limitation],
-            "next_actions": [
-                "Уточнить объект или модуль процедуры и повторить задачу после доступного read-only source-инструмента."
-            ],
+            "next_actions": [next_action],
         })
 
     source_line_limits = _source_line_limits(extra_context)

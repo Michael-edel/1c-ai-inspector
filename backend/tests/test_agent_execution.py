@@ -327,7 +327,7 @@ def test_method_answer_cannot_complete_without_full_source() -> None:
 
     assert report.status == "failed"
     assert report.findings == []
-    assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
+    assert report.validation["errorCode"] == "METHOD_DECLARATION_NOT_FOUND"
     assert report.model_usage.input_tokens == 0
     assert report.model_usage.output_tokens == 0
 
@@ -367,9 +367,106 @@ def test_empty_search_result_has_no_source_coverage() -> None:
 
     assert report.status == "failed"
     assert report.source_coverage == "none"
-    assert report.validation["errorCode"] == "SOURCE_CONTEXT_INSUFFICIENT"
+    assert report.validation["errorCode"] == "METHOD_DECLARATION_NOT_FOUND"
     assert report.model_usage.input_tokens == 0
-    assert any("MCP не вернул" in item for item in report.limitations)
+    assert any("не нашел" in item for item in report.limitations)
+
+
+def test_method_name_usage_is_not_treated_as_declaration() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_method_usage_only",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps(
+                {"text": "Объясни, какую бизнес-логику реализует процедура РасчетНДС."},
+                ensure_ascii=False,
+            ),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_code_assistant"),
+            get_settings(),
+            UnexpectedAdapter(),
+            extra_context=[{
+                "source": "MCP",
+                "tool": "search_code",
+                "data": {
+                    "content": [{
+                        "type": "text",
+                        "text": (
+                            "### Документ.ОтчетКомитенту.МодульОбъекта (строка 520)\n"
+                            "```bsl\nРасчетНДС.Коэффициент\n```\n"
+                            "### Документ.ОтчетКомитенту.МодульОбъекта (строка 529)\n"
+                            "```bsl\nВтКоэффициентыНДС КАК РасчетНДС\n```"
+                        ),
+                    }]
+                },
+            }],
+        )
+
+    assert report.status == "failed"
+    assert report.validation["errorCode"] == "METHOD_DECLARATION_NOT_FOUND"
+    assert report.validation["requestedMethod"] == "РасчетНДС"
+    assert report.validation["matchedModules"] == ["Документ.ОтчетКомитенту.МодульОбъекта"]
+    assert report.model_usage.input_tokens == 0
+    assert "не найдено" in report.summary
+    assert any("только употребления" in item for item in report.limitations)
+
+
+def test_ambiguous_method_declarations_require_exact_module() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        task = Task(
+            id="tsk_method_ambiguous",
+            project_id="prj_test",
+            agent_id="agt_test",
+            status="running",
+            request_json=json.dumps({"text": "Объясни процедуру РасчетНДС"}, ensure_ascii=False),
+            available_at=datetime.now(timezone.utc),
+        )
+        session.add(task)
+        session.commit()
+
+        report = execute_agent(
+            session,
+            task,
+            AgentRegistry().get("1c_code_assistant"),
+            get_settings(),
+            UnexpectedAdapter(),
+            extra_context=[{
+                "source": "MCP",
+                "tool": "search_code",
+                "data": {
+                    "content": [{
+                        "type": "text",
+                        "text": (
+                            "### Документ.А.МодульОбъекта (строка 10)\n"
+                            "```bsl\nПроцедура РасчетНДС()\nКонецПроцедуры\n```\n"
+                            "### Документ.Б.МодульОбъекта (строка 20)\n"
+                            "```bsl\nФункция РасчетНДС()\nКонецФункции\n```"
+                        ),
+                    }]
+                },
+            }],
+        )
+
+    assert report.status == "failed"
+    assert report.validation["errorCode"] == "METHOD_DECLARATION_AMBIGUOUS"
+    assert report.validation["candidateModules"] == [
+        "Документ.А.МодульОбъекта",
+        "Документ.Б.МодульОбъекта",
+    ]
+    assert report.model_usage.input_tokens == 0
 
 
 def test_module_audit_marks_complete_source_context() -> None:

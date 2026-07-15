@@ -36,6 +36,8 @@ class SchemaCheckingAdapter(FakeAdapter):
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         assert "StructuredReport JSON Schema" in messages[0]["content"]
         assert '"taskId"' in messages[0]["content"]
+        assert "только на русском языке" in messages[0]["content"]
+        assert "Не переводи и не изменяй точные идентификаторы 1С" in messages[0]["content"]
         return super().complete(messages)
 
 
@@ -74,7 +76,7 @@ class SourceEvidenceAdapter(FakeAdapter):
 
     def complete(self, messages: list[dict[str, str]]) -> ModelResult:
         if self.require_source_limits:
-            assert "Full source line limits:" in messages[0]["content"]
+            assert "Лимиты строк полного исходника:" in messages[0]["content"]
         payload = json.loads(messages[-1]["content"].split("Task envelope:\n", 1)[1])
         report = {
             "taskId": payload["taskId"],

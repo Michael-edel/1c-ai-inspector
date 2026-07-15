@@ -12,6 +12,7 @@ def test_registry_exposes_three_v01_agents() -> None:
         "1c_query_agent",
         "1c_audit_agent",
     }
+    assert {agent.prompt_version for agent in registry.list()} == {"1.1.0"}
 
 
 def test_registry_rejects_missing_capability() -> None:

@@ -225,12 +225,13 @@ def create_task(
     project = db.get(Project, payload.project_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    registry = AgentRegistry()
     agent = db.scalar(
         select(Agent).where(or_(Agent.id == payload.agent_id, Agent.code == payload.agent_id))
     )
     if agent is None or not agent.enabled:
         try:
-            definition = AgentRegistry().get(payload.agent_id)
+            definition = registry.get(payload.agent_id)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found") from exc
         agent = Agent(
@@ -242,6 +243,13 @@ def create_task(
         )
         db.add(agent)
         db.flush()
+    else:
+        try:
+            definition = registry.get(agent.code)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found") from exc
+        agent.name = definition.name
+        agent.prompt_version = definition.prompt_version
 
     settings: Settings = request.app.state.settings
     cost_estimate = model_request_cost_estimate(settings)
@@ -288,7 +296,7 @@ def create_task(
             "Project capabilities are not available for the selected agent.",
         )
     try:
-        AgentRegistry().validate_capabilities(agent.code, set(project_capabilities))
+        registry.validate_capabilities(agent.code, set(project_capabilities))
     except ValueError:
         _block_task(
             db,

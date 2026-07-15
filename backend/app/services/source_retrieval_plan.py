@@ -77,8 +77,16 @@ def ensure_full_source_retrieval(
         return request
 
     method = extract_method_reference(request)
+    text = request.get("text")
+    object_match = _OBJECT_REFERENCE.search(text) if isinstance(text, str) else None
+    direct_method_read = (
+        method is not None
+        and object_match is not None
+        and "read_method_source" in published_tools
+    )
     normalized_plan: list[Any] = []
     has_search = False
+    has_metadata_summary = False
     for step in plan:
         if not isinstance(step, dict):
             normalized_plan.append(step)
@@ -88,6 +96,20 @@ def ensure_full_source_retrieval(
         normalized_arguments = arguments if isinstance(arguments, dict) else {}
         if method and tool_name == "bsl_syntax_help":
             continue
+        if direct_method_read and tool_name == "search_code":
+            continue
+        if method and tool_name == "read_source" and "read_method_source" in published_tools:
+            continue
+        if method and tool_name == "read_method_source":
+            normalized_arguments = {**normalized_arguments, "method": method}
+        if (
+            object_match is not None
+            and tool_name == "get_object_structure"
+            and "get_edt_metadata_summary" in published_tools
+        ):
+            continue
+        if tool_name == "get_edt_metadata_summary":
+            has_metadata_summary = True
         if method and tool_name == "search_code":
             normalized_arguments = {**normalized_arguments, "query": method}
             has_search = True
@@ -98,28 +120,42 @@ def ensure_full_source_retrieval(
             has_search = True
         normalized_plan.append({**step, "arguments": normalized_arguments})
 
-    if method and not has_search and "search_code" in published_tools:
+    if method and not direct_method_read and not has_search and "search_code" in published_tools:
         normalized_plan.append({
             "tool": "search_code",
             "arguments": {"query": method, "limit": 50, "mode": "exact"},
         })
 
-    normalized_request = request if normalized_plan == plan else {**request, "retrieval": normalized_plan}
-    if "read_source" not in published_tools:
-        return normalized_request
+    if object_match is not None and not has_metadata_summary and "get_edt_metadata_summary" in published_tools:
+        object_type = object_match.group("type").casefold()
+        normalized_plan.append({
+            "tool": "get_edt_metadata_summary",
+            "arguments": {
+                "objectType": (
+                    "Документ" if object_type.startswith("документ")
+                    else "Справочник" if object_type.startswith("справочник")
+                    else "РегистрСведений"
+                ),
+                "name": object_match.group("name"),
+            },
+        })
 
-    text = request.get("text")
-    if not isinstance(text, str):
+    normalized_request = request if normalized_plan == plan else {**request, "retrieval": normalized_plan}
+    source_tool = (
+        "read_method_source"
+        if method is not None and "read_method_source" in published_tools
+        else "read_source"
+    )
+    if source_tool not in published_tools:
         return normalized_request
-    match = _OBJECT_REFERENCE.search(text)
-    if match is None:
+    if object_match is None:
         return normalized_request
 
     normalized_plan = normalized_request.get("retrieval", [])
-    if any(isinstance(step, dict) and step.get("tool") == "read_source" for step in normalized_plan):
+    if any(isinstance(step, dict) and step.get("tool") == source_tool for step in normalized_plan):
         return normalized_request
 
-    object_type = match.group("type").casefold()
+    object_type = object_match.group("type").casefold()
     if object_type.startswith("документ"):
         category = "Документ"
         module_type = "МодульОбъекта"
@@ -130,11 +166,14 @@ def ensure_full_source_retrieval(
         category = "РегистрСведений"
         module_type = "МодульНабораЗаписей"
 
-    module = f"{category}.{match.group('name')}.{module_type}"
+    module = f"{category}.{object_match.group('name')}.{module_type}"
+    source_arguments = {"module": module}
+    if source_tool == "read_method_source" and method is not None:
+        source_arguments["method"] = method
     return {
         **normalized_request,
         "retrieval": [
-            {"tool": "read_source", "arguments": {"module": module}},
+            {"tool": source_tool, "arguments": source_arguments},
             *normalized_plan,
         ],
     }

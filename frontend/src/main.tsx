@@ -87,26 +87,36 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
   if (agentCode === "1c_audit_agent" && object) {
     const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
     const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
-    if (publishedTools.includes("read_source")) {
+    const method = extractMethodReference(query);
+    const directMethodRead = Boolean(method && publishedTools.includes("read_method_source"));
+    if (method && directMethodRead) {
+      plan.push({ tool: "read_method_source", arguments: { module: `${object.category}.${object.name}.${moduleType}`, method } });
+    } else if (publishedTools.includes("read_source")) {
       plan.push({ tool: "read_source", arguments: { module: `${object.category}.${object.name}.${moduleType}` } });
     }
-    plan.push(
-      { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } },
-      { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
-    );
+    if (!directMethodRead) plan.push({ tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } });
+    plan.push(publishedTools.includes("get_edt_metadata_summary")
+      ? { tool: "get_edt_metadata_summary", arguments: { objectType: object.category, name: object.name } }
+      : { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } });
     return plan;
   }
   if (agentCode === "1c_code_assistant" && object) {
     const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
     const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
-    if (publishedTools.includes("read_source")) {
+    const method = extractMethodReference(query);
+    const directMethodRead = Boolean(method && publishedTools.includes("read_method_source"));
+    if (method && directMethodRead) {
+      plan.push({ tool: "read_method_source", arguments: { module: `${object.category}.${object.name}.${moduleType}`, method } });
+    } else if (publishedTools.includes("read_source")) {
       plan.push({ tool: "read_source", arguments: { module: `${object.category}.${object.name}.${moduleType}` } });
     }
-    plan.push(
+    if (!directMethodRead) plan.push(
       { tool: "bsl_syntax_help", arguments: { query: searchQuery } },
       { tool: "search_code", arguments: { query: searchQuery, limit: 500, category: object.category, module: moduleType, mode: "exact" } },
-      { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } },
     );
+    plan.push(publishedTools.includes("get_edt_metadata_summary")
+      ? { tool: "get_edt_metadata_summary", arguments: { objectType: object.category, name: object.name } }
+      : { tool: "get_object_structure", arguments: { object_type: object.type, object_name: object.name } });
     return plan;
   }
   if (extractMethodReference(query)) {

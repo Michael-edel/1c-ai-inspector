@@ -77,14 +77,14 @@ def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
     has_search_context = False
     for item in extra_context or []:
         tool = item.get("tool")
-        if tool not in {"search_code", "read_source"}:
+        if tool not in {"search_code", "read_source", "read_method_source"}:
             continue
         data = item.get("data")
         if not isinstance(data, dict):
             continue
         if data.get("sourceComplete") is True:
             return "full"
-        if tool == "read_source" and isinstance(data.get("source"), str) and data["source"].strip():
+        if tool in {"read_source", "read_method_source"} and isinstance(data.get("source"), str) and data["source"].strip():
             has_search_context = True
         content = data.get("content")
         if not isinstance(content, list):
@@ -96,7 +96,7 @@ def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
             if tool == "search_code" and re.search(r"^###[ \t]+\S", text, re.MULTILINE):
                 has_search_context = True
                 continue
-            if tool == "read_source":
+            if tool in {"read_source", "read_method_source"}:
                 try:
                     payload = json.loads(text)
                 except (TypeError, ValueError):
@@ -109,7 +109,7 @@ def _source_coverage(extra_context: list[dict[str, object]] | None) -> str:
 def _source_documents(extra_context: list[dict[str, object]] | None) -> dict[str, str]:
     documents: dict[str, str] = {}
     for item in extra_context or []:
-        if item.get("tool") != "read_source":
+        if item.get("tool") not in {"read_source", "read_method_source"}:
             continue
         data = item.get("data")
         if not isinstance(data, dict) or data.get("sourceComplete") is not True:
@@ -313,7 +313,7 @@ def execute_agent(
             ),
             "limitations": [limitation],
             "next_actions": [
-                "Уточнить объект или модуль процедуры и повторить read-only задачу после доступного read_source."
+                "Уточнить объект или модуль процедуры и повторить задачу после доступного read-only source-инструмента."
             ],
         })
 
@@ -327,7 +327,7 @@ def execute_agent(
     ]
     if source_line_limits:
         system_instructions.extend([
-            "For source_range evidence use only the exact module names and line ranges from the full read_source context.",
+            "For source_range evidence use only the exact module names and line ranges from complete read-only source context.",
             "Never use a line range above the source line limit and omit a finding rather than inventing a source range.",
             "Full source line limits: " + json.dumps(source_line_limits, ensure_ascii=False),
         ])

@@ -7,13 +7,15 @@ from app.mcp.policy import PolicyError, PolicyProvider
 
 def test_bridge_policy_is_read_only() -> None:
     snapshot = PolicyProvider(Path(__file__).parents[2] / "mcp_policy.yaml").load()
-    assert snapshot.policy.version == "1.2.0"
+    assert snapshot.policy.version == "1.3.0"
     assert set(snapshot.published_tools) == {
         "bsl_syntax_help",
         "get_configuration_info",
         "get_form_structure",
         "get_metadata_tree",
         "get_object_structure",
+        "get_edt_metadata_summary",
+        "read_method_source",
         "read_source",
         "search_code",
         "validate_query",

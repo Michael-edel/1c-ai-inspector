@@ -30,6 +30,17 @@ def _snapshot(tmp_path: Path, idempotent: bool = True):
     return PolicyProvider(path).load()
 
 
+def _compact_snapshot(tmp_path: Path):
+    path = tmp_path / "compact-policy.yaml"
+    path.write_text(
+        "policyId: compact\nversion: 1.0.0\ntools:\n"
+        "  Read Method Source: {name: raw_method, category: bsl.read, mode: read-only, idempotent: true}\n"
+        "  Search Code: {name: raw_search, category: code.search, mode: read-only, idempotent: true}\n",
+        encoding="utf-8",
+    )
+    return PolicyProvider(path).load()
+
+
 def test_retrieval_calls_only_published_capability(tmp_path: Path) -> None:
     snapshot = _snapshot(tmp_path)
 
@@ -414,6 +425,57 @@ def test_exact_method_search_reads_the_single_defining_module(tmp_path: Path) ->
     assert connector.calls[1][1] == {"module": "Документ.ЗаказКлиента.МодульОбъекта"}
     assert [call["toolName"] for call in result.calls] == ["search_code", "read_source"]
     assert result.context[-1]["data"]["sourceComplete"] is True
+
+
+def test_exact_method_search_prefers_compact_method_tool(tmp_path: Path) -> None:
+    snapshot = _compact_snapshot(tmp_path)
+
+    class Connector:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def call_tool(self, tool_name, arguments, deadline=None):
+            self.calls.append((tool_name, arguments))
+            if tool_name == "search_code":
+                return {"content": [{
+                    "type": "text",
+                    "text": "### Документ.ЗаказКлиента.МодульОбъекта (строка 42)\n"
+                    "```bsl\nПроцедура РассчитатьСебестоимость()\nКонецПроцедуры\n```",
+                }]}
+            return {
+                "sourceComplete": True,
+                "sourceScope": "method",
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "module": arguments["module"],
+                        "method": arguments["method"],
+                        "source": "Процедура РассчитатьСебестоимость()\nКонецПроцедуры",
+                        "sourceComplete": True,
+                    }, ensure_ascii=False),
+                }],
+            }
+
+    connector = Connector()
+    result = asyncio.run(retrieve_task_context(
+        {
+            "text": "Объясни процедуру РассчитатьСебестоимость",
+            "retrieval": [{"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость"}}],
+        },
+        AgentRegistry().get("1c_code_assistant"),
+        snapshot,
+        connector,
+    ))
+
+    assert connector.calls == [
+        ("search_code", {"query": "РассчитатьСебестоимость"}),
+        ("read_method_source", {
+            "module": "Документ.ЗаказКлиента.МодульОбъекта",
+            "method": "РассчитатьСебестоимость",
+        }),
+    ]
+    assert result.context[-1]["tool"] == "read_method_source"
+    assert result.context[-1]["data"]["sourceScope"] == "method"
 
 
 def test_method_search_does_not_guess_between_multiple_modules(tmp_path: Path) -> None:

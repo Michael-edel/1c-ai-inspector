@@ -117,10 +117,16 @@ def test_create_task_persists_server_enforced_full_source_step() -> None:
         assert persisted is not None
         retrieval = json.loads(persisted.request_json)["retrieval"]
         assert retrieval[0] == {
-            "tool": "read_source",
-            "arguments": {"module": "Документ.ЗаказКлиента.МодульОбъекта"},
+            "tool": "read_method_source",
+            "arguments": {
+                "module": "Документ.ЗаказКлиента.МодульОбъекта",
+                "method": "ОбработкаЗаполнения",
+            },
         }
-        assert retrieval[1]["tool"] == "search_code"
+        assert retrieval[1] == {
+            "tool": "get_edt_metadata_summary",
+            "arguments": {"objectType": "Документ", "name": "ЗаказКлиента"},
+        }
 
 
 def test_create_task_requires_confirmation_after_traffic_warning() -> None:

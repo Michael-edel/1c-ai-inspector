@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 BASE_URL="${BASE_URL:-https://inspector.michael.kz}"
-MINIMUM_TOOLS="${MINIMUM_TOOLS:-8}"
+MINIMUM_TOOLS="${MINIMUM_TOOLS:-10}"
 
 python3 - "$BASE_URL" "$MINIMUM_TOOLS" <<'PY'
 import json

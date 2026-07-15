@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://inspector.michael.kz",
-    [ValidateRange(1, 64)][int]$MinimumTools = 8
+    [ValidateRange(1, 64)][int]$MinimumTools = 10
 )
 
 $ErrorActionPreference = "Stop"

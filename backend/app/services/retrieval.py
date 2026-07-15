@@ -212,25 +212,32 @@ async def retrieve_task_context(
         module = _module_defining_method(output, requested_method)
         if module is None:
             return
+        source_tool = (
+            "read_method_source"
+            if "read_method_source" in snapshot.published_tools
+            else "read_source"
+        )
         source_arguments = {"module": module}
+        if source_tool == "read_method_source":
+            source_arguments["method"] = requested_method
         already_planned = any(
             isinstance(step, dict)
-            and step.get("tool") == "read_source"
+            and step.get("tool") == source_tool
             and step.get("arguments") == source_arguments
             for step in pending
         )
         already_called = any(
-            call.get("toolName") == "read_source" and call.get("input") == source_arguments
+            call.get("toolName") == source_tool and call.get("input") == source_arguments
             for call in calls
         )
         if already_planned or already_called:
             return
-        contract = snapshot.published_tools.get("read_source")
+        contract = snapshot.published_tools.get(source_tool)
         if contract is None or contract.category not in allowed_categories:
             return
         if len(calls) + len(pending) + 1 > max_tool_calls:
             raise RetrievalError("RETRIEVAL_LIMIT_EXCEEDED", calls)
-        pending.insert(0, {"tool": "read_source", "arguments": source_arguments})
+        pending.insert(0, {"tool": source_tool, "arguments": source_arguments})
 
     while pending:
         item = pending.pop(0)
@@ -245,7 +252,7 @@ async def retrieve_task_context(
             raise ToolNotAllowedError(f"MCP tool is not published: {tool_name}")
         if contract.category not in allowed_categories:
             raise RetrievalError("RETRIEVAL_CAPABILITY_NOT_ALLOWED")
-        if tool_name == "read_source":
+        if tool_name in {"read_source", "read_method_source"}:
             if max_methods_read is not None and methods_read >= max_methods_read:
                 raise RetrievalError("METHOD_READ_LIMIT_EXCEEDED", calls)
             methods_read += 1

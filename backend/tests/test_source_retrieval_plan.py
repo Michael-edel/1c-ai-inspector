@@ -6,6 +6,7 @@ from app.services.source_retrieval_plan import (
 
 
 PUBLISHED_TOOLS = {"read_source", "search_code", "get_object_structure"}
+COMPACT_TOOLS = PUBLISHED_TOOLS | {"read_method_source", "get_edt_metadata_summary"}
 
 
 def test_code_assistant_receives_full_document_module_before_search() -> None:
@@ -88,6 +89,30 @@ def test_method_only_request_is_normalized_to_exact_search() -> None:
 
     assert normalized["retrieval"] == [
         {"tool": "search_code", "arguments": {"query": "РассчитатьСебестоимость", "limit": 50, "mode": "exact"}},
+    ]
+
+
+def test_method_and_object_use_compact_source_and_metadata() -> None:
+    request = {
+        "text": "Объясни процедуру ОбработкаЗаполнения документа ЗаказКлиента",
+        "retrieval": [
+            {"tool": "read_source", "arguments": {"module": "Документ.ЗаказКлиента.МодульОбъекта"}},
+            {"tool": "search_code", "arguments": {"query": "полный вопрос"}},
+            {"tool": "get_object_structure", "arguments": {"object_type": "Document", "object_name": "ЗаказКлиента"}},
+        ],
+    }
+
+    normalized = ensure_full_source_retrieval(request, "1c_code_assistant", COMPACT_TOOLS)
+
+    assert normalized["retrieval"] == [
+        {
+            "tool": "read_method_source",
+            "arguments": {
+                "module": "Документ.ЗаказКлиента.МодульОбъекта",
+                "method": "ОбработкаЗаполнения",
+            },
+        },
+        {"tool": "get_edt_metadata_summary", "arguments": {"objectType": "Документ", "name": "ЗаказКлиента"}},
     ]
 
 

@@ -1,5 +1,5 @@
 policyId: edt-mcp-default
-version: 1.2.0
+version: 1.3.0
 tools:
   bsl_syntax_help:
     name: bsl_syntax_help
@@ -20,6 +20,14 @@ tools:
   get_object_structure:
     name: get_object_structure
     category: references.read
+    mode: read-only
+  get_edt_metadata_summary:
+    name: get_edt_metadata_summary
+    category: references.read
+    mode: read-only
+  read_method_source:
+    name: read_method_source
+    category: bsl.read
     mode: read-only
   read_source:
     name: read_source

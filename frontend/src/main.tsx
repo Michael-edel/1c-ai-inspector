@@ -58,18 +58,19 @@ const formatUsd = (value: number, minimumFractionDigits = 4) => `${value.toLocal
 const formatTokens = (value: number) => value.toLocaleString("ru-RU");
 const formatKzt = (value: number) => `${Math.round(value).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₸`;
 const extractObjectReference = (text: string) => {
-  const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)(?:\s+сведени[йя])?\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
+  const match = text.match(/(?:^|[\s(])(документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*(?:\s+(?:сведени[йя]|накоплени[йя]))?)\s*[.:]?\s*([A-Za-zА-Яа-яЁё0-9_]+)/i);
   if (!match) return null;
-  const type = match[1].toLowerCase();
+  const type = match[1].toLowerCase().replace(/\s+/g, "");
+  const isAccumulationRegister = type.startsWith("регистр") && type.includes("накоплен");
   return {
     name: match[2],
-    type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : "InformationRegister",
-    category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : "РегистрСведений",
+    type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : isAccumulationRegister ? "AccumulationRegister" : "InformationRegister",
+    category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : isAccumulationRegister ? "РегистрНакопления" : "РегистрСведений",
   };
 };
 const extractMethodReference = (text: string) => text.match(/(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:процедур[A-Za-zА-Яа-яЁё0-9_]*|функци[A-Za-zА-Яа-яЁё0-9_]*|метод[A-Za-zА-Яа-яЁё0-9_]*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i)?.[1] ?? null;
 const extractQueryText = (text: string) => text.match(/(?:^|[\r\n:])\s*(ВЫБРАТЬ(?![A-Za-zА-Яа-яЁё0-9_])[\s\S]*)/i)?.[1].replace(/```\s*$/, "").trim() ?? null;
-const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : "РегистрыСведений";
+const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : type === "AccumulationRegister" ? "РегистрыНакопления" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:аудит[A-Za-zА-Яа-яЁё0-9_]*|audit|finding[A-Za-zА-Яа-яЁё0-9_]*|потенциальн[A-Za-zА-Яа-яЁё0-9_]*\s+ошиб[A-Za-zА-Яа-яЁё0-9_]*|небезопасн[A-Za-zА-Яа-яЁё0-9_]*\s+мест[A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i.test(text);
 const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
 const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: string[] = []) => {
@@ -86,7 +87,7 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
   }
   if (agentCode === "1c_audit_agent" && object) {
     const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
-    const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
+    const moduleType = object.type.endsWith("Register") ? "МодульНабораЗаписей" : "МодульОбъекта";
     const method = extractMethodReference(query);
     const directMethodRead = Boolean(method && publishedTools.includes("read_method_source"));
     if (method && directMethodRead) {
@@ -102,7 +103,7 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
   }
   if (agentCode === "1c_code_assistant" && object) {
     const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
-    const moduleType = object.type === "InformationRegister" ? "МодульНабораЗаписей" : "МодульОбъекта";
+    const moduleType = object.type.endsWith("Register") ? "МодульНабораЗаписей" : "МодульОбъекта";
     const method = extractMethodReference(query);
     const directMethodRead = Boolean(method && publishedTools.includes("read_method_source"));
     if (method && directMethodRead) {

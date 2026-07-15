@@ -43,6 +43,25 @@ def test_audit_agent_receives_information_register_record_set_module() -> None:
     ]
 
 
+def test_audit_agent_preserves_accumulation_register_type() -> None:
+    normalized = ensure_full_source_retrieval(
+        {"text": "Проведи аудит регистра накопления Продажи"},
+        "1c_audit_agent",
+        COMPACT_TOOLS,
+    )
+
+    assert normalized["retrieval"] == [
+        {
+            "tool": "read_source",
+            "arguments": {"module": "РегистрНакопления.Продажи.МодульНабораЗаписей"},
+        },
+        {
+            "tool": "get_edt_metadata_summary",
+            "arguments": {"objectType": "РегистрНакопления", "name": "Продажи"},
+        },
+    ]
+
+
 def test_existing_full_source_step_is_not_duplicated() -> None:
     request = {
         "text": "Проверь документ ЗаказКлиента",

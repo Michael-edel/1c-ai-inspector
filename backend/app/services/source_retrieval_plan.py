@@ -8,8 +8,8 @@ from typing import Any
 _SOURCE_AWARE_AGENTS = {"1c_code_assistant", "1c_audit_agent"}
 _OBJECT_REFERENCE = re.compile(
     r"(?:^|[\s(])"
-    r"(?P<type>документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|регистр[A-Za-zА-Яа-яЁё0-9_]*)"
-    r"(?:\s+сведени[йя])?"
+    r"(?P<type>документ[A-Za-zА-Яа-яЁё0-9_]*|справочник[A-Za-zА-Яа-яЁё0-9_]*|"
+    r"регистр[A-Za-zА-Яа-яЁё0-9_]*(?:\s+(?:сведени[йя]|накоплени[йя]))?)"
     r"\s*[.:]?\s*(?P<name>[A-Za-zА-Яа-яЁё0-9_]+)",
     re.IGNORECASE,
 )
@@ -127,13 +127,14 @@ def ensure_full_source_retrieval(
         })
 
     if object_match is not None and not has_metadata_summary and "get_edt_metadata_summary" in published_tools:
-        object_type = object_match.group("type").casefold()
+        object_type = re.sub(r"\s+", "", object_match.group("type").casefold())
         normalized_plan.append({
             "tool": "get_edt_metadata_summary",
             "arguments": {
                 "objectType": (
                     "Документ" if object_type.startswith("документ")
                     else "Справочник" if object_type.startswith("справочник")
+                    else "РегистрНакопления" if object_type.startswith("регистр") and "накоплен" in object_type
                     else "РегистрСведений"
                 ),
                 "name": object_match.group("name"),
@@ -155,7 +156,7 @@ def ensure_full_source_retrieval(
     if any(isinstance(step, dict) and step.get("tool") == source_tool for step in normalized_plan):
         return normalized_request
 
-    object_type = object_match.group("type").casefold()
+    object_type = re.sub(r"\s+", "", object_match.group("type").casefold())
     if object_type.startswith("документ"):
         category = "Документ"
         module_type = "МодульОбъекта"
@@ -163,7 +164,11 @@ def ensure_full_source_retrieval(
         category = "Справочник"
         module_type = "МодульОбъекта"
     else:
-        category = "РегистрСведений"
+        category = (
+            "РегистрНакопления"
+            if object_type.startswith("регистр") and "накоплен" in object_type
+            else "РегистрСведений"
+        )
         module_type = "МодульНабораЗаписей"
 
     module = f"{category}.{object_match.group('name')}.{module_type}"

@@ -9,7 +9,7 @@ SourceCoverage = Literal["full", "partial", "none", "unknown"]
 class Evidence(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    type: Literal["source_range", "validation_error", "reference", "metadata_fact"]
+    type: Literal["source_range", "validation_error", "reference", "metadata_fact", "data_row"]
     object_fqn: str = Field(alias="objectFqn", min_length=1)
     module: str = Field(min_length=1)
     method: str | None = None

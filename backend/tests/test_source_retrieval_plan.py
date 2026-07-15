@@ -1,8 +1,27 @@
 from app.services.source_retrieval_plan import (
+    data_audit_request_is_supported,
     ensure_full_source_retrieval,
     extract_query_text,
     query_agent_request_is_supported,
 )
+
+
+def test_data_audit_requires_one_bounded_register_read() -> None:
+    assert data_audit_request_is_supported({
+        "text": "audit",
+        "retrieval": [{
+            "tool": "read_register_records",
+            "arguments": {"registerType": "auto", "name": "НДСЗаписиКнигиПродаж", "limit": 200},
+        }],
+    })
+    assert not data_audit_request_is_supported({"text": "audit", "retrieval": []})
+    assert not data_audit_request_is_supported({
+        "text": "audit",
+        "retrieval": [{
+            "tool": "read_register_records",
+            "arguments": {"registerType": "auto", "name": "Bad;Name", "limit": 50},
+        }],
+    })
 
 
 PUBLISHED_TOOLS = {"read_source", "search_code", "get_object_structure"}

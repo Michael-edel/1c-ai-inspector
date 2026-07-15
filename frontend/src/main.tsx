@@ -19,7 +19,7 @@ type Project = { id: string; name: string; environment: string; availableCapabil
 type ReportEvidence = { type: string; objectFqn: string; module: string; method: string | null; lineStart: number | null; lineEnd: number | null; excerpt: string | null; description: string | null; toolCallId: string | null };
 type ReportFinding = { category: string; severity: string; confidence: number; objectFqn: string; module: string; method: string | null; lineStart: number | null; lineEnd: number | null; description: string; risk: string; recommendation: string; evidence: ReportEvidence[] };
 type PersistedFinding = ReportFinding & { id: string };
-type Report = { status: string; summary: string; sourceCoverage?: "full" | "partial" | "none" | "unknown"; findings: ReportFinding[]; persistedFindings: PersistedFinding[]; limitations?: string[]; nextActions?: string[]; objectsReviewed?: string[]; validation?: { readOnly?: boolean; sourceComplete?: boolean; sourceEvidence?: { status?: string; invalidCount?: number; excerptCount?: number; droppedFindings?: number }; retrievalTools?: string[] }; toolUsage?: { calls: number; durationMs: number }; modelUsage?: { model?: string; inputTokens: number; outputTokens: number; cachedInputTokens?: number; durationMs?: number; estimatedCost: number; estimatedCostKzt?: number; usdKztRate?: number; pricingSource?: string }; execution?: { promptVersion: string; modelProvider: string; modelName: string; policyVersion: string; policyChecksum: string; toolsetChecksum: string } };
+type Report = { status: string; summary: string; sourceCoverage?: "full" | "partial" | "none" | "unknown"; findings: ReportFinding[]; persistedFindings: PersistedFinding[]; limitations?: string[]; nextActions?: string[]; objectsReviewed?: string[]; validation?: { readOnly?: boolean; sourceComplete?: boolean; contextKind?: string; sourceEvidence?: { status?: string; invalidCount?: number; excerptCount?: number; droppedFindings?: number }; retrievalTools?: string[] }; toolUsage?: { calls: number; durationMs: number }; modelUsage?: { model?: string; inputTokens: number; outputTokens: number; cachedInputTokens?: number; durationMs?: number; estimatedCost: number; estimatedCostKzt?: number; usdKztRate?: number; pricingSource?: string }; execution?: { promptVersion: string; modelProvider: string; modelName: string; policyVersion: string; policyChecksum: string; toolsetChecksum: string } };
 type ReportExport = { taskId: string; status: string; report: Report; audit: Audit };
 type PatchImpact = { objectFqn: string; relation: string; risk: string; source: string };
 type PatchProposal = { id: string; status: string; title: string; summary: string; targetEnvironment: string; sourceRevision: string | null; diff: string; files: { path: string; original: string; proposed: string }[]; impact: PatchImpact[]; checkpointRef: string | null; approvedBy: string | null; approvalNote: string | null; sourceValidationStatus: string; validationStatus: string };
@@ -62,17 +62,19 @@ const extractObjectReference = (text: string) => {
   if (!match) return null;
   const type = match[1].toLowerCase().replace(/\s+/g, "");
   const isAccumulationRegister = type.startsWith("регистр") && type.includes("накоплен");
+  const isGenericRegister = type === "регистр";
   return {
     name: match[2],
-    type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : isAccumulationRegister ? "AccumulationRegister" : "InformationRegister",
-    category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : isAccumulationRegister ? "РегистрНакопления" : "РегистрСведений",
+    type: type.startsWith("документ") ? "Document" : type.startsWith("справочник") ? "Catalog" : isGenericRegister ? "AutoRegister" : isAccumulationRegister ? "AccumulationRegister" : "InformationRegister",
+    category: type.startsWith("документ") ? "Документ" : type.startsWith("справочник") ? "Справочник" : isGenericRegister ? "Регистр" : isAccumulationRegister ? "РегистрНакопления" : "РегистрСведений",
   };
 };
 const extractMethodReference = (text: string) => text.match(/(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:процедур[A-Za-zА-Яа-яЁё0-9_]*|функци[A-Za-zА-Яа-яЁё0-9_]*|метод[A-Za-zА-Яа-яЁё0-9_]*)\s+([A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i)?.[1] ?? null;
 const extractQueryText = (text: string) => text.match(/(?:^|[\r\n:])\s*(ВЫБРАТЬ(?![A-Za-zА-Яа-яЁё0-9_])[\s\S]*)/i)?.[1].replace(/```\s*$/, "").trim() ?? null;
 const metadataCategoryForType = (type: string) => type === "Document" ? "Документы" : type === "Catalog" ? "Справочники" : type === "AccumulationRegister" ? "РегистрыНакопления" : "РегистрыСведений";
 const isAuditRequest = (text: string) => /(?:^|[^A-Za-zА-Яа-яЁё0-9_])(?:аудит[A-Za-zА-Яа-яЁё0-9_]*|audit|finding[A-Za-zА-Яа-яЁё0-9_]*|потенциальн[A-Za-zА-Яа-яЁё0-9_]*\s+ошиб[A-Za-zА-Яа-яЁё0-9_]*|небезопасн[A-Za-zА-Яа-яЁё0-9_]*\s+мест[A-Za-zА-Яа-яЁё0-9_]*)(?![A-Za-zА-Яа-яЁё0-9_])/i.test(text);
-const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== "1c_audit_agent";
+const isRegisterDataAuditRequest = (text: string) => isAuditRequest(text) && /регистр/i.test(text) && /(?:запис|ставк|дубл|повторн|расхожден|сумм)/i.test(text);
+const auditAgentMismatch = (agentCode: string, text: string) => isAuditRequest(text) && agentCode !== (isRegisterDataAuditRequest(text) ? "1c_data_audit_agent" : "1c_audit_agent");
 const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: string[] = []) => {
   const query = text.trim();
   const object = extractObjectReference(query);
@@ -84,6 +86,16 @@ const retrievalPlanForAgent = (agentCode: string, text: string, publishedTools: 
       { tool: "validate_query", arguments: { query: queryText ?? "" } },
       { tool: "get_metadata_tree", arguments: metadataArguments },
     ];
+  }
+  if (agentCode === "1c_data_audit_agent" && object?.type.endsWith("Register")) {
+    return [{
+      tool: "read_register_records",
+      arguments: {
+        registerType: object.type === "AutoRegister" ? "auto" : object.type,
+        name: object.name,
+        limit: 50,
+      },
+    }];
   }
   if (agentCode === "1c_audit_agent" && object) {
     const plan = [] as { tool: string; arguments: Record<string, string | number> }[];
@@ -164,7 +176,7 @@ const publicErrorMessages: Record<string, string> = {
   PATCH_HANDOFF_PACKAGE_HASH_MISMATCH: "SHA-256 выбранной версии package не совпадает.",
   PATCH_HANDOFF_PACKAGE_INVALID: "Подпись package не прошла проверку.",
 };
-const sourceCoverageLabels: Record<string, string> = { full: "полный исходный модуль", partial: "частичные фрагменты", none: "исходный код не получен", unknown: "не определен" };
+const sourceCoverageLabels: Record<string, string> = { full: "полный исходный модуль", partial: "частичные фрагменты", none: "исходный код не получен", unknown: "ограниченная выборка данных или не определен" };
 const shortChecksum = (value: string) => `${value.slice(0, 16)}…`;
 
 class ApiError extends Error {
@@ -418,7 +430,11 @@ function App() {
     event.preventDefault();
     if (!canCreateTask || !taskText.trim() || !selectedProject) return;
     if (shouldUseAuditAgent) {
-      setError("Этот запрос похож на аудит. Выберите профиль 1C Audit Agent.");
+      setError(isRegisterDataAuditRequest(taskText) ? "Для аудита live-записей регистра выберите 1C Data Audit Agent." : "Для аудита исходного кода выберите 1C Audit Agent.");
+      return;
+    }
+    if (selectedAgent === "1c_data_audit_agent" && !extractObjectReference(taskText)?.type.endsWith("Register")) {
+      setError("Укажите регистр 1С, например: регистр НДСЗаписиКнигиПродаж.");
       return;
     }
     if (selectedAgent === "1c_query_agent" && !extractQueryText(taskText)) {
@@ -705,7 +721,7 @@ function App() {
         </div>
         <div className="panel" id="policy"><div className="panel-heading"><div><span className="panel-index">02</span><h3>Policy snapshot</h3></div><div className="heading-actions"><button className="ghost-button compact" onClick={() => void syncProjects()}>SYNC PROJECTS</button><button className="ghost-button compact" onClick={() => void discoverTools()} disabled={discovering}>{discovering ? "DISCOVERING" : "DISCOVER MCP"}</button></div></div><dl className="data-list"><div><dt>Projects</dt><dd>{projects.length}</dd></div><div><dt>Policy checksum</dt><dd>{readiness?.policyChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Toolset checksum</dt><dd>{policy?.toolsetChecksum?.slice(0, 16) ?? "—"}…</dd></div><div><dt>Published tools</dt><dd className="safe">{policy?.publishedTools.length ?? 0} read-only</dd></div></dl></div>
       </section>
-      <section className="panel agents-panel" id="agents"><div className="panel-heading"><div><span className="panel-index">03</span><h3>Agent registry</h3></div><span className="panel-note">v0.1 / 3 profiles</span></div><div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={agent.code}><span className="agent-number">0{index + 1}</span><div><strong>{agent.name}</strong><small>{agent.task_kind} · prompt {agent.prompt_version}</small></div><span className="agent-state">STAGED</span></div>)}</div></section>
+      <section className="panel agents-panel" id="agents"><div className="panel-heading"><div><span className="panel-index">03</span><h3>Agent registry</h3></div><span className="panel-note">v0.1 / {agents.length} profiles</span></div><div className="agent-list">{agents.map((agent, index) => <div className="agent-row" key={agent.code}><span className="agent-number">0{index + 1}</span><div><strong>{agent.name}</strong><small>{agent.task_kind} · prompt {agent.prompt_version}</small></div><span className="agent-state">STAGED</span></div>)}</div></section>
       <section className="panel patch-panel" id="patch-planner"><div className="panel-heading"><div><span className="panel-index">04</span><h3>Patch Planner</h3></div><span className="panel-note">PROPOSAL ONLY</span></div><p className="panel-intro">Сформируйте diff для проверки. Inspector не меняет файлы, Git или конфигурацию 1С.</p><form onSubmit={createPatchProposal} className="patch-form"><label htmlFor="patch-title">Название proposal</label><input id="patch-title" value={patchTitle} onChange={(event) => setPatchTitle(event.target.value)} /><label htmlFor="patch-path">Относительный путь BSL</label><input id="patch-path" value={patchPath} onChange={(event) => setPatchPath(event.target.value)} /><div className="patch-form-grid"><div><label htmlFor="patch-revision">Source revision</label><input id="patch-revision" value={patchRevision} onChange={(event) => setPatchRevision(event.target.value)} /></div><div><label htmlFor="patch-summary">Summary</label><input id="patch-summary" value={patchSummary} onChange={(event) => setPatchSummary(event.target.value)} /></div></div><label htmlFor="patch-original">Original</label><textarea id="patch-original" value={patchOriginal} onChange={(event) => setPatchOriginal(event.target.value)} /><label htmlFor="patch-proposed">Proposed</label><textarea id="patch-proposed" value={patchProposed} onChange={(event) => setPatchProposed(event.target.value)} /><div className="patch-actions"><button className="primary-button" disabled={patchBusy || !selectedProject || !patchPath.trim() || patchOriginal === patchProposed}>Сформировать proposal</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("impact")} disabled={patchBusy || !patchProposal}>ANALYZE IMPACT</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("revalidate")} disabled={patchBusy || !patchProposal}>REVALIDATE SOURCE</button><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("checkpoint")} disabled={patchBusy || !patchProposal || patchProposal.sourceValidationStatus !== "valid" || !["proposed", "checkpointed"].includes(patchProposal.status)}>CHECKPOINT</button></div></form>{patchProposal && <div className="patch-result"><div className="patch-result-head"><div><strong>{patchProposal.title}</strong><small>{patchProposal.id} · revision {patchProposal.sourceRevision ?? "—"}</small></div><span className={`patch-status ${patchProposal.status}`}>{patchProposal.status}</span></div><pre className="diff-view">{patchProposal.diff}</pre><div className="patch-meta"><span>Impact: {patchProposal.impact.length} candidate(s)</span><span>Source: {patchProposal.sourceValidationStatus}</span><span>Checkpoint: {patchProposal.checkpointRef ? "recorded" : "not recorded"}</span></div><div className="patch-decision"><label htmlFor="patch-actor">Actor</label><input id="patch-actor" value={patchActor} onChange={(event) => setPatchActor(event.target.value)} /><label htmlFor="patch-note">Decision note</label><input id="patch-note" value={patchNote} onChange={(event) => setPatchNote(event.target.value)} /><div className="patch-actions"><button type="button" className="primary-button" onClick={() => void runPatchAction("approve")} disabled={patchBusy || !["checkpointed", "awaiting_approval"].includes(patchProposal.status)}>Approve proposal</button><button type="button" className="ghost-button compact danger-button" onClick={() => void runPatchAction("reject")} disabled={patchBusy || ["approved", "rejected"].includes(patchProposal.status)}>Reject proposal</button><button type="button" className="ghost-button compact" onClick={exportPatchPackage} disabled={patchBusy}>EXPORT PACKAGE</button></div></div><div className="event-log"><div className="event-log-title">Proposal event log</div>{patchEvents.map((item) => <div className="event-row" key={item.id}><span>{item.type}</span><small>{item.actor} · {new Date(item.createdAt).toLocaleString()}</small></div>)}</div></div>}</section>
       <section className="panel patch-validation-bar"><div className="panel-heading"><div><span className="panel-index">05</span><h3>Validation gate</h3></div><span className="panel-note">SOURCE + DIFF</span></div><p className="panel-intro">Approval разрешен только после source revalidation и детерминированной проверки diff.</p><div className="patch-actions"><span className="panel-note">{patchProposal ? `source: ${patchProposal.sourceValidationStatus} · patch: ${patchProposal.validationStatus}` : "Создайте proposal"}</span><label htmlFor="auth-token">Inspector token</label><input id="auth-token" type="password" value={authToken} onChange={(event) => setAuthToken(event.target.value)} placeholder="Bearer token без префикса" /><button type="button" className="ghost-button compact" onClick={() => void runPatchAction("validate")} disabled={patchBusy || !patchProposal || patchProposal.sourceValidationStatus !== "valid"}>VALIDATE PATCH</button></div></section>
       <SandboxPanel proposal={patchProposal} authToken={authToken} onMessage={setMessage} onError={setError} />

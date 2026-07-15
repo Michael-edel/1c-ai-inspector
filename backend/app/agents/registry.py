@@ -41,6 +41,13 @@ DEFAULT_AGENTS: tuple[AgentDefinition, ...] = (
         required_capabilities=("bsl.read", "code.search", "references.read"),
         task_kind="module_audit",
     ),
+    AgentDefinition(
+        code="1c_data_audit_agent",
+        name="1C Data Audit Agent",
+        prompt_version="1.0.0",
+        required_capabilities=("register.records.read",),
+        task_kind="register_data_audit",
+    ),
 )
 
 

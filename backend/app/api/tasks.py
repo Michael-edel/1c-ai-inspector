@@ -17,7 +17,11 @@ from app.services.readiness import ReadinessGate
 from app.services.capabilities import evaluate_capabilities
 from app.services.costs import model_request_cost_estimate, round_kzt
 from app.reports.failure import normalize_failure_report
-from app.services.source_retrieval_plan import ensure_full_source_retrieval, query_agent_request_is_supported
+from app.services.source_retrieval_plan import (
+    data_audit_request_is_supported,
+    ensure_full_source_retrieval,
+    query_agent_request_is_supported,
+)
 from app.services.task_cancellation import TaskNotCancellable, request_task_cancellation
 from app.services.traffic import traffic_snapshot
 
@@ -319,6 +323,18 @@ def create_task(
             snapshot,
             "AGENT_REQUEST_NOT_SUPPORTED",
             "1C Query Agent accepts only requests containing a 1C query that starts with ВЫБРАТЬ.",
+        )
+
+    if agent.code == "1c_data_audit_agent" and not data_audit_request_is_supported(payload.request):
+        _block_task(
+            db,
+            payload,
+            project,
+            agent,
+            settings,
+            snapshot,
+            "AGENT_REQUEST_NOT_SUPPORTED",
+            "1C Data Audit Agent requires one bounded read_register_records request.",
         )
 
     payload = payload.model_copy(

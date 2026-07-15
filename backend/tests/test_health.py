@@ -39,6 +39,7 @@ def test_agents_endpoint_lists_v01_agents() -> None:
             "1c_code_assistant",
             "1c_query_agent",
             "1c_audit_agent",
+            "1c_data_audit_agent",
     }
 
 

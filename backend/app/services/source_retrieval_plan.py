@@ -6,6 +6,38 @@ from typing import Any
 
 
 _SOURCE_AWARE_AGENTS = {"1c_code_assistant", "1c_audit_agent"}
+_SAFE_OBJECT_NAME = re.compile(r"^[A-Za-zА-Яа-яЁё_][A-Za-zА-Яа-яЁё0-9_]*$")
+_REGISTER_TYPES = {
+    "auto",
+    "AccumulationRegister",
+    "InformationRegister",
+    "AccountingRegister",
+    "CalculationRegister",
+}
+
+
+def data_audit_request_is_supported(request: dict[str, object]) -> bool:
+    retrieval = request.get("retrieval")
+    if not isinstance(retrieval, list) or len(retrieval) != 1:
+        return False
+    step = retrieval[0]
+    if not isinstance(step, dict) or step.get("tool") != "read_register_records":
+        return False
+    arguments = step.get("arguments")
+    if not isinstance(arguments, dict):
+        return False
+    name = arguments.get("name")
+    register_type = arguments.get("registerType")
+    limit = arguments.get("limit")
+    return (
+        isinstance(name, str)
+        and _SAFE_OBJECT_NAME.fullmatch(name.strip()) is not None
+        and isinstance(register_type, str)
+        and register_type in _REGISTER_TYPES
+        and isinstance(limit, int)
+        and not isinstance(limit, bool)
+        and 1 <= limit <= 500
+    )
 _V09_AUTOMATION_TOOLS = {
     "resolve_symbol",
     "get_source_checksum",
